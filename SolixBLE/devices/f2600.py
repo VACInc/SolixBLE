@@ -6,15 +6,18 @@
 """
 
 import logging
+from datetime import datetime, timedelta
 
 from ..const import (
     DEFAULT_METADATA_BOOL,
     DEFAULT_METADATA_INT,
 )
-from ..states import DisplayTimeout, LightStatus, PortStatus
+from ..states import ChargingStatus, DisplayTimeout, LightStatus, PortStatus
 
 from . import F2000
 
+CMD_AC_TIMER = "4042"
+CMD_DC_TIMER = "4043"
 CMD_AC_CHARGING_POWER = "4044"
 CMD_DISPLAY_TIMEOUT = "4046"
 CMD_DISPLAY_ON_OFF = "4052"
@@ -29,6 +32,7 @@ PAYLOAD_OFF = "a10121a2020100"
 PAYLOAD_LIGHT_MODE = "a10121a20201"
 PAYLOAD_TIMEOUT_TIME = "a10121a20302"
 PAYLOAD_AC_CHARGING_POWER = "a10121a20302"
+PAYLOAD_TIMER = "a10121a20502"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +46,69 @@ class F2600(F2000):
     """
 
     _EXPECTED_TELEMETRY_LENGTH: int = 253
+
+    @property
+    def charging_status(self) -> ChargingStatus:
+        """Charging status of the device.
+
+        - ``IDLE`` (0): no external source connected; this includes
+          pure battery-only discharge — the device does *not* emit
+          ``DISCHARGING`` in that state.
+        - ``DISCHARGING`` (1): a solar source is present but insufficient
+          to cover the load; battery is also contributing.
+        - ``CHARGING`` (2): AC wall is connected and charging the battery.
+
+        :returns: Status of charging.
+        """
+        return ChargingStatus(self._parse_int("bc", begin=1))
+
+    @property
+    def ac_timer_remaining(self) -> int:
+        """Time remaining on AC timer.
+
+        :returns: Seconds remaining or default int value.
+        """
+        return self._parse_int("a2", begin=1)
+
+    @property
+    def ac_timer(self) -> datetime | None:
+        """Timestamp of AC timer.
+
+        :returns: Timestamp of when AC timer expires or None.
+        """
+        if (
+            self.ac_timer_remaining != DEFAULT_METADATA_INT
+            and self.ac_timer_remaining != 0
+        ):
+            return datetime.now() + timedelta(seconds=self.ac_timer_remaining)
+
+    @property
+    def dc_timer_remaining(self) -> int:
+        """Time remaining on DC timer.
+
+        :returns: Seconds remaining or default int value.
+        """
+        return self._parse_int("a3", begin=1)
+
+    @property
+    def dc_timer(self) -> datetime | None:
+        """Timestamp of DC timer.
+
+        :returns: Timestamp of when DC timer expires or None.
+        """
+        if (
+            self.dc_timer_remaining != DEFAULT_METADATA_INT
+            and self.dc_timer_remaining != 0
+        ):
+            return datetime.now() + timedelta(seconds=self.dc_timer_remaining)
+
+    @property
+    def light(self) -> LightStatus:
+        """Light Status.
+
+        :returns: Status of the light bar.
+        """
+        return LightStatus(self._parse_int("cf", begin=1))
 
     @property
     def ac_output(self) -> PortStatus:
@@ -108,6 +175,56 @@ class F2600(F2000):
         return PortStatus(self._parse_int("ca", begin=1))
 
     @property
+    def ac_power_out(self) -> int:
+        """AC Power Out.
+
+        :returns: AC socket output power in watts or default int value.
+        """
+        return self._parse_int("a6", begin=1)
+
+    @property
+    def power_out(self) -> int:
+        """Total Power Out.
+
+        :returns: Total output power (AC + USB + DC) in watts or default int value.
+        """
+        return self._parse_int("b0", begin=1)
+
+    @property
+    def solar_port(self) -> PortStatus:
+        """Solar/DC input port status.
+
+        Note: remains INPUT after the Anderson connector loses power until
+        AC wall charging takes over, at which point it clears to NOT_CONNECTED.
+
+        :returns: Status of the solar/DC input port.
+        """
+        return (
+            PortStatus.INPUT
+            if self._parse_int("bf", begin=1) == 1
+            else PortStatus.NOT_CONNECTED
+        )
+
+    @property
+    def power_in(self) -> int:
+        """Total Power In.
+
+        :returns: Total input power in watts or default int value.
+        """
+        return self._parse_int("af", begin=1)
+
+    @property
+    def ac_power_in(self) -> int:
+        """AC Power In.
+
+        On F2600, key ``a5`` tracks total AC wall input. Key ``af`` tracks combined total of all
+        inputs.
+
+        :returns: Total AC wall input power in watts or default int value.
+        """
+        return self._parse_int("a5", begin=1)
+
+    @property
     def ac_charging_power(self) -> int:
         """Configured AC charging power limit in watts.
 
@@ -138,6 +255,28 @@ class F2600(F2000):
             if self._data is not None and "db" in self._data
             else DEFAULT_METADATA_BOOL
         )
+
+    @property
+    def is_display_on(self) -> bool | None:
+        """Whether the LCD display is on.
+
+        :returns: True if on, False if off, or default bool value.
+        """
+        return (
+            bool(self._parse_int("de", begin=1))
+            if self._data is not None and "de" in self._data
+            else DEFAULT_METADATA_BOOL
+        )
+
+    @property
+    def display_mode(self) -> LightStatus:
+        """Configured display brightness level.
+
+        :returns: Display brightness as LightStatus (LOW/MEDIUM/HIGH) or UNKNOWN.
+        """
+        if self._data is None or "d9" not in self._data:
+            return LightStatus.UNKNOWN
+        return LightStatus(self._parse_int("d9", begin=1))
 
 
     async def turn_ac_on(self) -> None:
@@ -178,6 +317,32 @@ class F2600(F2000):
         """
         await self._send_command(
             cmd=bytes.fromhex(CMD_DC_OUTPUT), payload=bytes.fromhex(PAYLOAD_OFF)
+        )
+
+    async def set_ac_timer(self, seconds: int) -> None:
+        """Set the AC auto-off timer.
+
+        :param seconds: Seconds until AC output shuts off. Pass 0 to cancel.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_AC_TIMER),
+            payload=bytes.fromhex(PAYLOAD_TIMER)
+            + seconds.to_bytes(length=4, byteorder="little", signed=False),
+        )
+
+    async def set_dc_timer(self, seconds: int) -> None:
+        """Set the DC auto-off timer.
+
+        :param seconds: Seconds until DC output shuts off. Pass 0 to cancel.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_DC_TIMER),
+            payload=bytes.fromhex(PAYLOAD_TIMER)
+            + seconds.to_bytes(length=4, byteorder="little", signed=False),
         )
 
     async def set_light_mode(self, mode: LightStatus) -> None:
