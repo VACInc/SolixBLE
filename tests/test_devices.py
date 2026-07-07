@@ -19,6 +19,7 @@ from SolixBLE import (
     C1000G2,
     ChargingStatus,
     LightStatus,
+    MagGo3in1,
     PortOverload,
     PortStatus,
     PrimeCharger160w,
@@ -817,6 +818,38 @@ from tests.helpers import MockDevice
             },
             id="solarbank2_telemetry",
         ),
+        # Anker MagGo 3-in-1 wireless charger. Real capture with a phone on pad 1
+        # and an Apple Watch on pad 2, pad 3 unused. Per-pad power is the little
+        # endian value at aX[6:8] divided by 100 (e.g a2 -> 0x011d = 285 -> 2.85).
+        pytest.param(
+            MagGo3in1,
+            "a10131a20804013a0232001d01a3080401c60214008e00a4080400f40100000000a50304ffffa6050400000000fe050300000000",
+            {
+                "pad_1": PortStatus.OUTPUT,
+                "pad_1_power": 2.85,
+                "pad_2": PortStatus.OUTPUT,
+                "pad_2_power": 1.42,
+                "pad_3": PortStatus.NOT_CONNECTED,
+                "pad_3_power": 0.0,
+                "power_out": 4.27,
+            },
+            id="maggo_3in1_phone_and_watch",
+        ),
+        # Same charger, only pad 2 (a3) differs - phone now drawing more power.
+        pytest.param(
+            MagGo3in1,
+            "a10131a20804013a0232001d01a3080401d0021e00d800a4080400f40100000000a50304ffffa6050400000000fe050300000000",
+            {
+                "pad_1": PortStatus.OUTPUT,
+                "pad_1_power": 2.85,
+                "pad_2": PortStatus.OUTPUT,
+                "pad_2_power": 2.16,
+                "pad_3": PortStatus.NOT_CONNECTED,
+                "pad_3_power": 0.0,
+                "power_out": 5.01,
+            },
+            id="maggo_3in1_phone_higher_power",
+        ),
     ],
 )
 async def test_values(
@@ -1212,6 +1245,29 @@ def test_payload_decryption(
             "5609bc39f79166da75139feb7c335fb7524b3bf0d730db96bf6ebf450d3e165b",
             """{'a1': '31', 'a2': '024606', 'a3': '020000', 'a4': '0100', 'a5': '0401d8459906bb0b', 'a6': '0401e81300000000', 'a7': '0400000000000000', 'a8': '0103', 'a9': '0150', 'aa': '0100', 'ab': '0400000000000b0b0b', 'ac': '0401002c0100002c0100000200', 'ad': '0401002c0100002c0100000201', 'ae': '0401002c0100002c0100000300', 'af': '0100', 'b0': '0100', 'b1': '0100', 'b2': '0101', 'b3': '01ff', 'b4': '0400000000ac051573fafffbff', 'b5': '04ffffffffffffffffffffffff', 'e0': '0448000000', 'e1': '0400000000000000000000', 'fe': '0300000000'}""",
             id="prime_telemetry_packet_plain_text",
+        ),
+        # Anker MagGo 3-in-1 wireless charger telemetry packet (cmd 4300). The
+        # decrypted payload is a real capture (phone on pad 1, watch on pad 2);
+        # it was re-encrypted with the secret below to exercise the end-to-end
+        # command routing and decrypt/parse path for this device.
+        pytest.param(
+            MagGo3in1,
+            [
+                "ff094e00030111430044014f7041bf9427bc0ef8117b960f68fd68b88f9b9279303d80490ea7888a709b12adb02ee81b269cc267c5f1c11b499e9c170a1514a45ceafe1bbd3925d3a766ac4aa32d"
+            ],
+            "5609bc39f79166da75139feb7c335fb7524b3bf0d730db96bf6ebf450d3e165b",
+            """{'a1': '31', 'a2': '04013a0232001d01', 'a3': '0401c60214008e00', 'a4': '0400f40100000000', 'a5': '04ffff', 'a6': '0400000000', 'fe': '0300000000'}""",
+            id="maggo_3in1_telemetry_packet",
+        ),
+        # Same charger, phone now drawing more power (only a3 differs).
+        pytest.param(
+            MagGo3in1,
+            [
+                "ff094e00030111430044014f7041bf9427bc0ef8117b960f68fd7eb8859bc479303d80490ea7888a709b12adb02ee81b269cc267c5f1c11b499e9c170a7a6261f98ce9db7373fe83ccb3d81475e2"
+            ],
+            "5609bc39f79166da75139feb7c335fb7524b3bf0d730db96bf6ebf450d3e165b",
+            """{'a1': '31', 'a2': '04013a0232001d01', 'a3': '0401d0021e00d800', 'a4': '0400f40100000000', 'a5': '04ffff', 'a6': '0400000000', 'fe': '0300000000'}""",
+            id="maggo_3in1_telemetry_packet_higher_power",
         ),
     ],
 )

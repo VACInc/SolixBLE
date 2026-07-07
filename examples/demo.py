@@ -22,6 +22,7 @@ from SolixBLE import (
     F2000,
     F3800,
     Generic,
+    MagGo3in1,
     PrimeCharger160w,
     PrimeCharger250w,
     PrimePowerBank20k,
@@ -44,6 +45,7 @@ MODELS = {
     "PrimeCharger160w": PrimeCharger160w,
     "PrimeCharger250w": PrimeCharger250w,
     "Prime Power Bank 20k/220w": PrimePowerBank20k,
+    "MagGo 3-in-1 Wireless Charger": MagGo3in1,
     "Unknown": Generic,
 }
 
