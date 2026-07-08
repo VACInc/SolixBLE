@@ -53,6 +53,7 @@ See the [support table](https://solixble.readthedocs.io/en/latest) in the docume
 - Solarbank 3
 - Prime Charger 160w
 - Prime Charger 250w
+- Prime MagGo 3in1 (A25X7)
 - Potentially more!
 
 
