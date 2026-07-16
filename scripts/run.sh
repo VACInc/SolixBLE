@@ -55,12 +55,14 @@ echo "Starting execution..."
 # Port forward the port used by Frida gadget
 adb -s $DEVICE forward tcp:49152 tcp:49152
 
-# In 5 seconds open the app (non-blocking)
-(sleep 5 && adb -s $DEVICE shell monkey -p com.anker.charging 1 && echo "Restarted app!") &
+# Open app
+adb -s $DEVICE shell monkey -p com.anker.charging 1 
 
-# Open the app and execute the Frida script
-adb -s $DEVICE shell monkey -p com.anker.charging 1 \
-    && frida -H 127.0.0.1:49152 -n Gadget -l frida.js \
+# Wait 1 second
+sleep 1
+
+# Execute Frida script
+frida -H 127.0.0.1:49152 -n Gadget -l frida.js \
     2>&1 | tee -a "${LOG_FOLDER}/${TIMESTAMP}.log"
 
 echo "Done!"
