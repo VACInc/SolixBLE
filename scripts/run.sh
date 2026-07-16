@@ -3,11 +3,11 @@
 # Script name   : run.sh
 # Description   : Script for executing patched Anker app and starting Frida.
 # Author        : Harvey Lelliott (@flip-dots)
-# Date          : 23/03/26
+# Date          : 16/07/26
 # Usage         : ./run.sh [ADB device (e.g 192.168.1.1:1234)]
 # 
 # License       : MIT
-# Revision      : 1.0.0
+# Revision      : 1.1.0
 #
 set -euxo pipefail
 
@@ -55,10 +55,12 @@ echo "Starting execution..."
 # Port forward the port used by Frida gadget
 adb -s $DEVICE forward tcp:49152 tcp:49152
 
+# Kill app
+adb -s "$DEVICE" shell am force-stop com.anker.charging
+sleep 1
+
 # Open app
 adb -s $DEVICE shell monkey -p com.anker.charging 1 
-
-# Wait 1 second
 sleep 1
 
 # Execute Frida script
