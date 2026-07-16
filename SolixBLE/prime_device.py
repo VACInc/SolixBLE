@@ -487,64 +487,19 @@ class PrimeDevice(SolixBLEDevice):
     # Packet processing #
     #####################
 
-    # async def _process_telemetry_packet(
-    #     self, payload: bytes, cmd: bytes | None = None,
-    # ) -> None:
-    #     """Process a telemetry packet from the device.
+    async def _process_telemetry_packet(
+        self, payload: bytes, cmd: bytes = None
+    ) -> None:
+        """
+        Process a telemetry packet from an Anker Prime device.
 
-    #     This performs the default processing of telemetry packets in which
-    #     telemetry payloads are spread across multiple packets. This is
-    #     overridden for devices which do not use multi-packet payloads for
-    #     telemetry.
-    #     """
-
-    #     payload = self._decrypt_payload(payload)
-    #     _LOGGER.debug(f"Decrypted payload: {payload.hex()}")
-
-    #     # First byte encodes fragment info (high nibble = index, low = total)
-    #     fragment_index = (payload[0] >> 4) & 0x0F
-    #     fragment_total = payload[0] & 0x0F
-
-    #     # Multi-part message
-    #     if fragment_total > 1:
-    #         fragment_data = payload[1:]
-    #         cmd_key = bytes(cmd)
-    #         _LOGGER.debug(
-    #             f"Fragment {fragment_index}/{fragment_total} for cmd {cmd.hex()}, {len(fragment_data)} bytes"
-    #         )
-
-    #         # Store fragment
-    #         if cmd_key not in self._fragment_buffers or fragment_index == 1:
-    #             self._fragment_buffers[cmd_key] = {}
-    #             self._fragment_totals[cmd_key] = fragment_total
-
-    #         self._fragment_buffers[cmd_key][fragment_index] = fragment_data
-
-    #         # Wait until all fragments have arrived
-    #         if len(self._fragment_buffers[cmd_key]) < fragment_total:
-    #             _LOGGER.debug("Waiting for remaining fragments...")
-    #             return
-
-    #         # Reassemble in order
-    #         payload = b"".join(
-    #             self._fragment_buffers[cmd_key][i]
-    #             for i in sorted(self._fragment_buffers[cmd_key])
-    #         )
-    #         del self._fragment_buffers[cmd_key]
-    #         del self._fragment_totals[cmd_key]
-    #         _LOGGER.debug(f"Reassembled payload: {len(payload)} bytes")
-
-    #     else:
-    #         # Strip fragment info
-    #         _LOGGER.debug("Not multi-packet payload!")
-
-    #         if payload[0] not in bytearray.fromhex(
-    #             "a0a1a2a3a4a5a6a7a8a9"
-    #         ):
-    #             payload = payload[1:]
-
-    #     parameters = self._parse_payload(payload)
-    #     return await self._process_telemetry(parameters)
+        Anker Prime devices pack all telemetry data into a single packet
+        requiring no special logic to handle.
+        """
+        decrypted_payload = self._decrypt_payload(payload)
+        _LOGGER.debug(f"Decrypted payload: {decrypted_payload.hex()}")
+        parameters = self._parse_payload(decrypted_payload)
+        return await self._process_telemetry(parameters)
 
     async def _send_command(self, cmd: bytes, payload: bytes) -> None:
         """Send a command to the device.

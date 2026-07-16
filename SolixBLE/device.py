@@ -377,7 +377,7 @@ class SolixBLEDevice:
 
         return packet_pattern, packet_cmd, packet_payload
 
-    def _parse_payload(self, payload: bytearray | bytes, quiet: bool = True) -> dict[str, bytes]:
+    def _parse_payload(self, payload: bytearray | bytes) -> dict[str, bytes]:
         """
         Parse payload bytes into parameters.
 
@@ -389,9 +389,7 @@ class SolixBLEDevice:
         but the successfully parsed parameters (if any) will be returned.
 
         :param payload: Payload to parse into parameters.
-        :param quiet: If parsing errors should raise an exception.
         :returns: Dictionary mapping parameter ids (a1, a2, ...) to data.
-        :raises IndexError: If error and quiet is false.
         """
 
         def _verbose_pop(data: bytearray, length: int, name: str) -> bytes:
@@ -456,14 +454,12 @@ class SolixBLEDevice:
                 )
                 parsed_data[param_id] = param_data
 
-            except IndexError as e:
+            except IndexError:
                 _LOGGER.exception(
                     f"Unexpected end of packet! Data may be missing or invalid!"
                     f" Extracted so far: '{self._parameters_to_str(parsed_data)}'."
                     f" Payload: '{payload.hex()}'"
                 )
-                if not quiet:
-                    raise e
 
         return parsed_data
 
@@ -522,22 +518,15 @@ class SolixBLEDevice:
         )
         return cipher.encrypt(padded_data)
 
-    def _reassemble_payload(
-        self, payload: bytes, cmd: bytes | None = None,
-    ) -> bytes | None:
-        """Reassemble and return the raw payload.
+    async def _process_telemetry_packet(
+        self, payload: bytes, cmd: bytes = None
+    ) -> None:
+        """Process a telemetry packet from the device.
 
-        This reassembles the payload if it is spread across multiple packets
-        and will return the completed payload or original payload in the case
-        of packets which contain the full payload. Note that this does not
-        perform any additional processing (e.g encryption, parsing into parameters).
-
-        If the payload is not ready (i.e not the last packet in a series of packets
-        where the payload is spread across multiple packets) then None is returned.
-
-        :param payload: The payload including layout information.
-        :param cmd: The command value of the packet.
-        :returns: Reassembled payload bytes or None if payload is not complete.
+        This performs the default processing of telemetry packets in which
+        telemetry payloads are spread across multiple packets. This is
+        overridden for devices which do not use multi-packet payloads for
+        telemetry.
         """
 
         # First byte encodes fragment info (high nibble = index, low = total)
@@ -562,7 +551,7 @@ class SolixBLEDevice:
             # Wait until all fragments have arrived
             if len(self._fragment_buffers[cmd_key]) < fragment_total:
                 _LOGGER.debug("Waiting for remaining fragments...")
-                return None
+                return
 
             # Reassemble in order
             payload = b"".join(
@@ -575,40 +564,11 @@ class SolixBLEDevice:
 
         else:
             # Strip fragment info
-            _LOGGER.debug("Not multi-packet payload!")
             payload = payload[1:]
 
-        return payload
-
-    async def _process_telemetry_packet(
-        self, payload: bytes, cmd: bytes = None
-    ) -> None:
-        """Process a telemetry packet from the device.
-
-        This performs the default processing of telemetry packets in which
-        telemetry payloads are spread across multiple packets. This is
-        overridden for devices which do not use multi-packet payloads for
-        telemetry.
-        """
-
-        # Sometimes the payload does not include fragment information so if
-        # we decrypt it and it works and it looks like a normal packet then we
-        # skip reassembly
-        try:
-            decrypted_payload = self._decrypt_payload(payload)
-            parameters = self._parse_payload(decrypted_payload, quiet=False)
-            return await self._process_telemetry(parameters)
-
-        except Exception as e:
-            _LOGGER.debug(f"Failed to parse payload as single-fragment payload, trying multi-fragment parsing next: {e}")
-
-        payload = self._reassemble_payload(payload, cmd)
-        if payload is None:
-            return None
-
         decrypted_payload = self._decrypt_payload(payload)
-        parameters = self._parse_payload(decrypted_payload)
         _LOGGER.debug(f"Decrypted payload: {decrypted_payload.hex()}")
+        parameters = self._parse_payload(decrypted_payload)
         return await self._process_telemetry(parameters)
 
     async def _process_telemetry(self, parameters: dict[str, bytes]) -> None:
@@ -664,13 +624,8 @@ class SolixBLEDevice:
         pattern, cmd, payload = self._split_packet(data)
         _LOGGER.debug(f"Pattern: {pattern.hex()}")
         _LOGGER.debug(f"CMD: {cmd.hex()}")
-        _LOGGER.debug(f"Payload (raw): {payload.hex()}")
-        _LOGGER.debug(f"Payload length (raw): {len(payload)}")
-
-        
-
-        _LOGGER.debug(f"Payload (raw): {payload.hex()}")
-        _LOGGER.debug(f"Payload length (raw): {len(payload)}")
+        _LOGGER.debug(f"Payload: {payload.hex()}")
+        _LOGGER.debug(f"Payload length: {len(payload)}")
 
         # If the packet has a future registered then we just trigger that
         # future instead of processing it here
