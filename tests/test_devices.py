@@ -6,6 +6,7 @@
 
 import asyncio
 import logging
+from datetime import datetime, timedelta
 from typing import Any
 from unittest import mock
 
@@ -17,7 +18,9 @@ from SolixBLE import (
     C800,
     C1000,
     C1000G2,
+    F2600,
     ChargingStatus,
+    DisplayTimeout,
     LightStatus,
     MagGo3in1,
     PortOverload,
@@ -850,6 +853,98 @@ from tests.helpers import MockDevice
             },
             id="maggo_3in1_phone_higher_power",
         ),
+        # The two F2600 payloads below are constructed rather than captured
+        # from a device. The key to property mapping they encode was confirmed
+        # against real hardware, but the values themselves are chosen to
+        # exercise the parsing, so do not read them as a record of a specific
+        # packet.
+        #
+        # Charging from the wall with nothing plugged into the outputs, as
+        # reported in a full get_status_update response. Note that a5/a6 are
+        # the AC values and af/b0 are the totals, which is the other way around
+        # from the F2000 this model inherits from.
+        pytest.param(
+            F2600,
+            "a2050300000000a3050300000000a403022d00a50302b004a603020000a703020000a803020000a903020000aa03020000ab03020000ac03020000ad03020000ae03020000af0302b004b003020000b303026a00b903020000ba03026e00bb020100bc020102bd020119be020100bf020100c102013ec2020100c3020164c4020100c5020100c6020100c7020100c8020100c9020100ca020100cb020100cf020100d0110041313738314142434445464748323334d10302e803d303022c01d9020102db020101de020101",
+            {
+                "ac_timer_remaining": 0,
+                "ac_timer": None,
+                "dc_timer_remaining": 0,
+                "dc_timer": None,
+                "time_remaining": 4.5,
+                "hours_remaining": 4.5,
+                "days_remaining": 0,
+                "charging_status": ChargingStatus.CHARGING,
+                "ac_power_in": 1200,
+                "ac_power_out": 0,
+                "power_in": 1200,
+                "power_out": 0,
+                "solar_power_in": 0,
+                "solar_port": PortStatus.NOT_CONNECTED,
+                "ac_output": PortStatus.NOT_CONNECTED,
+                "dc_output": PortStatus.NOT_CONNECTED,
+                "usb_port_c1": PortStatus.NOT_CONNECTED,
+                "usb_port_c2": PortStatus.NOT_CONNECTED,
+                "usb_port_c3": PortStatus.NOT_CONNECTED,
+                "usb_port_a1": PortStatus.NOT_CONNECTED,
+                "usb_port_a2": PortStatus.NOT_CONNECTED,
+                "light": LightStatus.OFF,
+                "temperature": 25,
+                "battery_percentage": 62,
+                "battery_health": 100,
+                "num_expansion": 0,
+                "software_version": "1.0.6",
+                "software_version_controller": "1.1.0",
+                "serial_number": "A1781ABCDEFGH234",
+                # Only present in a full status update response.
+                "ac_charging_power": 1000,
+                "display_timeout_seconds": 300,
+                "display_mode": LightStatus.MEDIUM,
+                "power_saving_mode_enabled": True,
+                "is_display_on": True,
+                # The F2000 reads these same keys as something else, which is
+                # why the F2600 overrides them.
+                "ac_to_battery": 1200,
+                "ac_power_out_sockets": 0,
+            },
+            id="f2600_ac_charging",
+        ),
+        # The same device running off solar with a USB load, as reported in an
+        # unsolicited telemetry packet. These are shorter than a full status
+        # update and omit the configuration parameters (d1, d3, d9, db and de),
+        # which is what the missing value fallbacks exist for.
+        pytest.param(
+            F2600,
+            "a2050300000000a3050300000000a403028400a503020000a603020000a703022d00a803020000a903020000aa03020000ab03020500ac03020000ad03020000ae03029600af03029600b003023200b303026a00b903020000ba03026e00bb020100bc020101bd02011cbe020100bf020101c1020159c2020100c3020164c4020100c5020100c6020101c7020100c8020100c9020100ca020101cb020101cf020103d0110041313738314142434445464748323334",
+            {
+                "time_remaining": 13.2,
+                "hours_remaining": 13.2,
+                "days_remaining": 0,
+                "charging_status": ChargingStatus.DISCHARGING,
+                "ac_power_in": 0,
+                "ac_power_out": 0,
+                "power_in": 150,
+                "power_out": 50,
+                "solar_power_in": 150,
+                "solar_port": PortStatus.INPUT,
+                "ac_output": PortStatus.NOT_CONNECTED,
+                "dc_output": PortStatus.OUTPUT,
+                "usb_c1_power": 45,
+                "usb_a2_power": 5,
+                "usb_port_c1": PortStatus.OUTPUT,
+                "usb_port_a2": PortStatus.OUTPUT,
+                "light": LightStatus.HIGH,
+                "temperature": 28,
+                "battery_percentage": 89,
+                # Not reported outside of a full status update response.
+                "ac_charging_power": -1,
+                "display_timeout_seconds": -1,
+                "display_mode": LightStatus.UNKNOWN,
+                "power_saving_mode_enabled": None,
+                "is_display_on": None,
+            },
+            id="f2600_solar_discharging",
+        ),
     ],
 )
 async def test_values(
@@ -870,6 +965,33 @@ async def test_values(
         assert (
             getattr(device, class_property) == expected_value
         ), f"Mismatch for property '{class_property}'!"
+
+
+@pytest.mark.asyncio
+async def test_f2600_timers() -> None:
+    """
+    Test that a running F2600 timer is reported as a timestamp.
+
+    The a2 and a3 keys hold a second count, which the timer properties turn
+    into a wall clock timestamp. This is the f2600_ac_charging payload with an
+    hour left on the AC timer and half an hour left on the DC timer, as the
+    mapping in test_values cannot assert on a moving timestamp.
+    """
+    device = F2600(MOCK_BLE_DEVICE)
+    payload = "a20503100e0000a3050308070000a403022d00a50302b004a603020000a703020000a803020000a903020000aa03020000ab03020000ac03020000ad03020000ae03020000af0302b004b003020000b303026a00b903020000ba03026e00bb020100bc020102bd020119be020100bf020100c102013ec2020100c3020164c4020100c5020100c6020100c7020100c8020100c9020100ca020100cb020100cf020100d0110041313738314142434445464748323334d10302e803d303022c01d9020102db020101de020101"
+    await device._process_telemetry(device._parse_payload(bytes.fromhex(payload)))
+
+    assert device.ac_timer_remaining == 3600
+    assert device.dc_timer_remaining == 1800
+
+    ac_timer = device.ac_timer
+    dc_timer = device.dc_timer
+    assert ac_timer is not None, "Expected a timestamp for the running AC timer!"
+    assert dc_timer is not None, "Expected a timestamp for the running DC timer!"
+
+    now = datetime.now()
+    assert timedelta(minutes=59) < ac_timer - now < timedelta(minutes=61)
+    assert timedelta(minutes=29) < dc_timer - now < timedelta(minutes=31)
 
 
 @pytest.mark.asyncio
@@ -894,6 +1016,189 @@ async def test_c1000g2_dc_control() -> None:
     device._send_command.assert_awaited_once_with(
         cmd=bytes.fromhex("4102"), payload=bytes.fromhex("a10121a2020100")
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method,args,cmd,payload",
+    [
+        pytest.param("turn_ac_on", (), "404a", "a10121a2020101", id="ac_on"),
+        pytest.param("turn_ac_off", (), "404a", "a10121a2020100", id="ac_off"),
+        pytest.param("turn_dc_on", (), "404b", "a10121a2020101", id="dc_on"),
+        pytest.param("turn_dc_off", (), "404b", "a10121a2020100", id="dc_off"),
+        pytest.param(
+            "turn_display_on",
+            (),
+            "4052",
+            "a10121a2020101",
+            id="display_on",
+        ),
+        pytest.param(
+            "turn_display_off",
+            (),
+            "4052",
+            "a10121a2020100",
+            id="display_off",
+        ),
+        pytest.param(
+            "turn_power_saving_mode_on",
+            (),
+            "404e",
+            "a10121a2020101",
+            id="power_saving_on",
+        ),
+        pytest.param(
+            "turn_power_saving_mode_off",
+            (),
+            "404e",
+            "a10121a2020100",
+            id="power_saving_off",
+        ),
+        # Timers take a 32 bit little endian second count. Zero cancels.
+        pytest.param(
+            "set_ac_timer",
+            (3600,),
+            "4042",
+            "a10121a20502100e0000",
+            id="ac_timer_1h",
+        ),
+        pytest.param(
+            "set_ac_timer",
+            (0,),
+            "4042",
+            "a10121a2050200000000",
+            id="ac_timer_cancel",
+        ),
+        pytest.param(
+            "set_dc_timer",
+            (1800,),
+            "4043",
+            "a10121a2050208070000",
+            id="dc_timer_30m",
+        ),
+        # Light and display brightness take a single byte enum value.
+        pytest.param(
+            "set_light_mode",
+            (LightStatus.OFF,),
+            "404f",
+            "a10121a2020100",
+            id="light_off",
+        ),
+        pytest.param(
+            "set_light_mode",
+            (LightStatus.HIGH,),
+            "404f",
+            "a10121a2020103",
+            id="light_high",
+        ),
+        pytest.param(
+            "set_display_mode",
+            (LightStatus.MEDIUM,),
+            "404c",
+            "a10121a2020102",
+            id="display_medium",
+        ),
+        # Display timeout and AC charging power take a 16 bit little endian value.
+        pytest.param(
+            "set_display_timeout",
+            (DisplayTimeout.S300,),
+            "4046",
+            "a10121a203022c01",
+            id="display_timeout_5m",
+        ),
+        pytest.param(
+            "set_display_timeout",
+            (DisplayTimeout.S1800,),
+            "4046",
+            "a10121a203020807",
+            id="display_timeout_30m",
+        ),
+        pytest.param(
+            "set_ac_charging_power",
+            (1000,),
+            "4044",
+            "a10121a20302e803",
+            id="ac_charging_power_1000w",
+        ),
+        # Both ends of the accepted range.
+        pytest.param(
+            "set_ac_charging_power",
+            (100,),
+            "4044",
+            "a10121a203026400",
+            id="ac_charging_power_min",
+        ),
+        pytest.param(
+            "set_ac_charging_power",
+            (1440,),
+            "4044",
+            "a10121a20302a005",
+            id="ac_charging_power_max",
+        ),
+    ],
+)
+async def test_f2600_commands(
+    method: str, args: tuple[Any, ...], cmd: str, payload: str
+) -> None:
+    """
+    Test that an F2600 control method dispatches the correct command.
+
+    :param method: Name of the method under test.
+    :param args: Positional arguments to call the method with.
+    :param cmd: Expected command bytes.
+    :param payload: Expected payload bytes.
+    """
+    device = F2600(MOCK_BLE_DEVICE)
+    device._send_command = mock.AsyncMock()
+
+    await getattr(device, method)(*args)
+
+    device._send_command.assert_awaited_once_with(
+        cmd=bytes.fromhex(cmd), payload=bytes.fromhex(payload)
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method,args",
+    [
+        pytest.param("set_light_mode", (LightStatus.UNKNOWN,), id="light_unknown"),
+        pytest.param(
+            "set_display_mode",
+            (LightStatus.UNKNOWN,),
+            id="display_unknown",
+        ),
+        # The LCD has no SOS brightness, unlike the light bar.
+        pytest.param("set_display_mode", (LightStatus.SOS,), id="display_sos"),
+        pytest.param(
+            "set_display_timeout",
+            (DisplayTimeout.UNKNOWN,),
+            id="timeout_unknown",
+        ),
+        # Below 100 W the device charges at full power instead, and 1440 W is
+        # the highest the app allows.
+        pytest.param("set_ac_charging_power", (99,), id="ac_charging_power_too_low"),
+        pytest.param(
+            "set_ac_charging_power",
+            (1441,),
+            id="ac_charging_power_too_high",
+        ),
+    ],
+)
+async def test_f2600_invalid_commands(method: str, args: tuple[Any, ...]) -> None:
+    """
+    Test that an invalid F2600 command is rejected without being transmitted.
+
+    :param method: Name of the method under test.
+    :param args: Positional arguments to call the method with.
+    """
+    device = F2600(MOCK_BLE_DEVICE)
+    device._send_command = mock.AsyncMock()
+
+    with pytest.raises(ValueError):
+        await getattr(device, method)(*args)
+
+    device._send_command.assert_not_awaited()
 
 
 @pytest.mark.asyncio
