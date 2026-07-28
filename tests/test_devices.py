@@ -853,35 +853,30 @@ from tests.helpers import MockDevice
             },
             id="maggo_3in1_phone_higher_power",
         ),
-        # The two F2600 payloads below are constructed rather than captured
-        # from a device. The key to property mapping they encode was confirmed
-        # against real hardware, but the values themselves are chosen to
-        # exercise the parsing, so do not read them as a record of a specific
-        # packet.
-        #
-        # Charging from the wall with nothing plugged into the outputs, as
-        # reported in a full get_status_update response. Note that a5/a6 are
-        # the AC values and af/b0 are the totals, which is the other way around
-        # from the F2000 this model inherits from.
+        # Captured from a real F2600 charging from the wall at 1440 W with a
+        # 280 W load on the AC output, taken from the get_status_update
+        # response. Note that a5/a6 are the AC values and af/b0 are the totals,
+        # which is the other way around from the F2000 this model inherits
+        # from. Both happen to be equal here because AC is the only input.
         pytest.param(
             F2600,
-            "a2050300000000a3050300000000a403022d00a50302b004a603020000a703020000a803020000a903020000aa03020000ab03020000ac03020000ad03020000ae03020000af0302b004b003020000b303026a00b903020000ba03026e00bb020100bc020102bd020119be020100bf020100c102013ec2020100c3020164c4020100c5020100c6020100c7020100c8020100c9020100ca020100cb020100cf020100d0110041313738314142434445464748323334d10302e803d303022c01d9020102db020101de020101",
+            "a10131a2050300000000a3050300000000a403020900a50302a405a603021801a703020000a803020000a903020000aa03020000ab03020000ac03020000ad03020000ae03020000af0302a405b003021801b103020000b203020000b303025a01b403022e01b503027400b603026c00b703020000b803027500b903020000ba03025a01bb03020100bc020102bd020122be020100bf020102c0020100c1020140c2020100c3020164c4020100c5020100c6020100c7020100c8020100c9020100ca020100cb020100cc020100cd020100ce020100cf020100d01100415a56334e4d30463038373030343131d10302a005d203020000d303021400d403023c00d503020000d603020000d7020101d8020100d9020103da02013cdb020100dc020100dd020101de020100f815040000000001000000000000000000000000000000fd0a0041313738315f354168fe0503372b136a",
             {
                 "ac_timer_remaining": 0,
                 "ac_timer": None,
                 "dc_timer_remaining": 0,
                 "dc_timer": None,
-                "time_remaining": 4.5,
-                "hours_remaining": 4.5,
+                "time_remaining": 0.9,
+                "hours_remaining": 0.9,
                 "days_remaining": 0,
                 "charging_status": ChargingStatus.CHARGING,
-                "ac_power_in": 1200,
-                "ac_power_out": 0,
-                "power_in": 1200,
-                "power_out": 0,
+                "ac_power_in": 1444,
+                "ac_power_out": 280,
+                "power_in": 1444,
+                "power_out": 280,
                 "solar_power_in": 0,
                 "solar_port": PortStatus.NOT_CONNECTED,
-                "ac_output": PortStatus.NOT_CONNECTED,
+                "ac_output": PortStatus.OUTPUT,
                 "dc_output": PortStatus.NOT_CONNECTED,
                 "usb_port_c1": PortStatus.NOT_CONNECTED,
                 "usb_port_c2": PortStatus.NOT_CONNECTED,
@@ -889,26 +884,31 @@ from tests.helpers import MockDevice
                 "usb_port_a1": PortStatus.NOT_CONNECTED,
                 "usb_port_a2": PortStatus.NOT_CONNECTED,
                 "light": LightStatus.OFF,
-                "temperature": 25,
-                "battery_percentage": 62,
+                "temperature": 34,
+                "battery_percentage": 64,
                 "battery_health": 100,
                 "num_expansion": 0,
-                "software_version": "1.0.6",
-                "software_version_controller": "1.1.0",
-                "serial_number": "A1781ABCDEFGH234",
+                "software_version": "3.4.6",
+                "software_version_controller": "3.4.6",
+                "serial_number": "AZV3NM0F08700411",
                 # Only present in a full status update response.
-                "ac_charging_power": 1000,
-                "display_timeout_seconds": 300,
-                "display_mode": LightStatus.MEDIUM,
-                "power_saving_mode_enabled": True,
-                "is_display_on": True,
+                "ac_charging_power": 1440,
+                "display_timeout_seconds": 20,
+                "display_mode": LightStatus.HIGH,
+                "power_saving_mode_enabled": False,
+                "is_display_on": False,
                 # The F2000 reads these same keys as something else, which is
                 # why the F2600 overrides them.
-                "ac_to_battery": 1200,
-                "ac_power_out_sockets": 0,
+                "ac_to_battery": 1444,
+                "ac_power_out_sockets": 280,
             },
             id="f2600_ac_charging",
         ),
+        # Unlike the payload above this one is constructed rather than
+        # captured. The key to property mapping it encodes was confirmed
+        # against real hardware, but the values are chosen to exercise the
+        # parsing, so do not read it as a record of a specific packet.
+        #
         # The same device running off solar with a USB load, as reported in an
         # unsolicited telemetry packet. These are shorter than a full status
         # update and omit the configuration parameters (d1, d3, d9, db and de),
@@ -992,6 +992,77 @@ async def test_f2600_timers() -> None:
     now = datetime.now()
     assert timedelta(minutes=59) < ac_timer - now < timedelta(minutes=61)
     assert timedelta(minutes=29) < dc_timer - now < timedelta(minutes=31)
+
+
+@pytest.mark.asyncio
+async def test_f2600_status_update(fast_sleep, fast_timeouts) -> None:
+    """
+    Test that a status update response is reassembled and parsed.
+
+    The F2600 splits its telemetry across two packets which get_status_update
+    waits for one at a time, so the second can only be delivered once the first
+    has been consumed. Both packets are a real capture of the same state as the
+    f2600_ac_charging case in test_values.
+    """
+    packets = [
+        "ff09fd0003010fc840121d0c33c131a989f42599468694c5ae12a4fefe22077259298f3d55e53945a587d5b57b6f753bad94f98cb73b83b7f941437047efffcd2e1bc7bf6f5ad6025c100c489d768f32d0b7109149f577d3c421d38cab71f56f327ddfe1d31615c863b5452abfb8fe515afc08e8e020199d6c354f6e87a319c2a2a057f5879ffdfcb250b974a99ed6ac66c5c54f955363a5e36bacaf0b3782cf58dc3bdcf5f92aa034cc946e77a70dae2a6e8d998c69507dce227ec7f4aff4f39246a4471913443d374ffe784731cb561f1a688574a4a2ab18cd22af78bff26debce0132b8bb8c66a9376b67834a07234aad0e437ac6f4a20eb4da9d50",
+        "ff09790003010fc84022d9ecf7817f965014c285c67f2b043bb132c112af3837ebb36ffce45ad0714007b23ec0986fa6ca826b67e69c4155622c165f9a906ad30be10677e4796ee324f18529bba09f8df569b8550e58f8fd69055deda4d72d75ae415e699d3290a005cebc3ceed0ba628ac9ebb37d89f3c0d4",
+    ]
+
+    device = F2600(MOCK_BLE_DEVICE)
+
+    async with MockDevice() as mock_bluetooth:
+
+        # We first expect a negotiation
+        for expected, response in NEGOTIATION_RESPONSES_SOLIX.items():
+            mock_bluetooth.expect_ordered(
+                bytes.fromhex(expected),
+                [bytes.fromhex(x) for x in response],
+            )
+
+        assert await device.connect(), "Expected connect to return True"
+        await asyncio.sleep(0.5)
+        assert device.negotiated, "Expected negotiated to be True"
+        mock_bluetooth.check_assertions()
+
+        # Swap in the secret the packets below were captured with
+        device._shared_secret = bytes.fromhex(
+            "691d425d79574b56e59524c7e2e592701e13441aba03e4d1b251211f113f980c"
+        )
+
+        async def wait_until_listening() -> None:
+            """Block until the device is waiting for a telemetry packet.
+
+            A packet that arrives before get_status_update has registered a
+            future for it is routed as a regular notification and dropped, so
+            the packets cannot just be sent one after the other.
+            """
+            key = bytes.fromhex("03010f") + bytes.fromhex("c840")
+            for _ in range(1000):
+                if any(
+                    not future.done() for future in device._packet_futures.get(key, [])
+                ):
+                    return
+                await asyncio.sleep(0.01)
+            raise AssertionError("Device never listened for a telemetry packet!")
+
+        # The request itself gets no response, the packets are fed in
+        # afterwards so that they arrive while it is waiting for them
+        mock_bluetooth.expect_ordered(None, [])
+        update = asyncio.create_task(device.get_status_update())
+
+        for packet in packets:
+            await wait_until_listening()
+            await mock_bluetooth.send_data([bytes.fromhex(packet)])
+
+        parameters = await update
+        mock_bluetooth.check_assertions()
+
+    # The values are asserted on properly by the f2600_ac_charging case in
+    # test_values, this only confirms the packets went back together in order
+    assert parameters["c1"] == bytes.fromhex("0140"), "Expected 64% battery!"
+    assert parameters["d0"] == b"\x00AZV3NM0F08700411", "Expected the serial!"
+    assert device._data == parameters, "Expected the update to be stored!"
 
 
 @pytest.mark.asyncio
@@ -1285,6 +1356,19 @@ async def test_f2600_invalid_commands(method: str, args: tuple[Any, ...]) -> Non
             ],
             "5609bc39f79166da75139feb7c335fb7524b3bf0d730db96bf6ebf450d3e165b",
             id="prime_power_bank_20k",
+        ),
+        pytest.param(
+            F2600,
+            [
+                "ff090e00030001080100a1010152",
+                "ff091b00030001080300a10102a202fd00a30144a40101a50102ff",
+                "ff093800030001082900a10103a2054553503332a307302e302e302e33a410415a56334e4d30463038373030343131a506f49d8a9be4862a",
+                "ff090b00030001080500f2",
+                "ff094d00030001082100a1400f0e69f81a25d11d70396b64b24f4f93b3bb8529b26d68bfdf6355cb0389c121e8560332cc4143c3ebca38ee75961354c28eec75d5585d0b039b66065920133fe3",
+                None,
+            ],
+            "691d425d79574b56e59524c7e2e592701e13441aba03e4d1b251211f113f980c",
+            id="f2600_1",
         ),
     ],
 )
