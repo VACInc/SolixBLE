@@ -278,7 +278,6 @@ class F2600(F2000):
             return LightStatus.UNKNOWN
         return LightStatus(self._parse_int("d9", begin=1))
 
-
     async def turn_ac_on(self) -> None:
         """Turn the AC output on.
 
@@ -444,7 +443,9 @@ class F2600(F2000):
         :raises ConnectionError: If not connected to device.
         :raises BleakError: If command transmission fails.
         """
-        if watts < 100 or watts > 1440: # below 100 causes max charge, 1440 is max in app.
+        # Below 100 W the device charges at full power instead, and 1440 W is
+        # the highest the app allows.
+        if watts < 100 or watts > 1440:
             raise ValueError("AC charging power must be between 100 and 1440 W")
 
         await self._send_command(
@@ -483,5 +484,7 @@ class F2600(F2000):
         decrypted_payload = self._decrypt_payload(new_payload)
         parameters = self._parse_payload(decrypted_payload)
         _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters, types=True)}")
-        await self._process_telemetry(parameters) # update the internal parameters as well
+        await self._process_telemetry(
+            parameters
+        )  # update the internal parameters as well
         return parameters
