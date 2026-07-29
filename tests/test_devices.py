@@ -893,7 +893,7 @@ from tests.helpers import MockDevice
                 "serial_number": "AZV3NM0F08700411",
                 # Only present in a full status update response.
                 "ac_charging_power": 1440,
-                "display_timeout_seconds": 20,
+                "display_timeout": 20,
                 "display_mode": LightStatus.HIGH,
                 "power_saving_mode_enabled": False,
                 "is_display_on": False,
@@ -938,7 +938,7 @@ from tests.helpers import MockDevice
                 "battery_percentage": 89,
                 # Not reported outside of a full status update response.
                 "ac_charging_power": -1,
-                "display_timeout_seconds": -1,
+                "display_timeout": -1,
                 "display_mode": LightStatus.UNKNOWN,
                 "power_saving_mode_enabled": None,
                 "is_display_on": None,

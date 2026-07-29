@@ -51,12 +51,15 @@ class F2600(F2000):
     def charging_status(self) -> ChargingStatus:
         """Charging status of the device.
 
-        - ``IDLE`` (0): no external source connected; this includes
-          pure battery-only discharge — the device does *not* emit
-          ``DISCHARGING`` in that state.
-        - ``DISCHARGING`` (1): a solar source is present but insufficient
-          to cover the load; battery is also contributing.
-        - ``CHARGING`` (2): AC wall is connected and charging the battery.
+        .. note::
+           :collapsible: closed
+
+            - ``IDLE`` (0): no external source connected; this includes
+              pure battery-only discharge — the device does *not* emit
+              ``DISCHARGING`` in that state.
+            - ``DISCHARGING`` (1): a solar source is present but insufficient
+              to cover the load; battery is also contributing.
+            - ``CHARGING`` (2): AC wall is connected and charging the battery.
 
         :returns: Status of charging.
         """
@@ -128,7 +131,10 @@ class F2600(F2000):
         PortStatus.NOT_CONNECTED signifies off.
         PortStatus.OUTPUT signifies on.
 
-        Based on observed F2600 telemetry, key ``cb`` tracks DC output state.
+        .. note::
+           :collapsible: closed
+
+           Based on observed F2600 telemetry, key ``cb`` tracks DC output state.
 
         :returns: Status of the DC port.
         """
@@ -194,8 +200,10 @@ class F2600(F2000):
     def solar_port(self) -> PortStatus:
         """Solar/DC input port status.
 
-        Note: remains INPUT after the Anderson connector loses power until
-        AC wall charging takes over, at which point it clears to NOT_CONNECTED.
+        .. note::
+           The port remains INPUT after the Anderson connector loses power
+           until AC wall charging takes over, at which point it clears to
+           NOT_CONNECTED.
 
         :returns: Status of the solar/DC input port.
         """
@@ -217,8 +225,11 @@ class F2600(F2000):
     def ac_power_in(self) -> int:
         """AC Power In.
 
-        On F2600, key ``a5`` tracks total AC wall input. Key ``af`` tracks combined total of all
-        inputs.
+        .. note::
+           :collapsible: closed
+
+           On the F2600 key ``a5`` tracks total AC wall input and key ``af``
+           tracks the combined total of all inputs.
 
         :returns: Total AC wall input power in watts or default int value.
         """
@@ -235,8 +246,8 @@ class F2600(F2000):
         return self._parse_int("d1", begin=1)
 
     @property
-    def display_timeout_seconds(self) -> int:
-        """Configured display timeout in seconds.
+    def display_timeout(self) -> int:
+        """Display timeout limit in seconds.
 
         :returns: Display timeout in seconds or default int value.
         """
