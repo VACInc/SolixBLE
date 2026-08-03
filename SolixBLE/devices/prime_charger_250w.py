@@ -8,6 +8,12 @@ from ..const import DEFAULT_METADATA_FLOAT
 from ..prime_device import PrimeDevice
 from ..states import PortStatus
 
+#: Command sent after connecting to start the telemetry stream. This must
+#: be sent every ~10 seconds or no telemetry will be sent by the device.
+CMD_SUB_AND_KEEP_ALIVE = "420b"
+SUB_AND_KEEP_ALIVE_PAYLOAD = "a10121"
+KEEP_ALIVE_INTERNAL = 10
+
 
 class PrimeCharger250w(PrimeDevice):
     """
@@ -15,21 +21,16 @@ class PrimeCharger250w(PrimeDevice):
 
     Use this class to connect and monitor the 250w charger.
     This model is also known as the A2345.
-
-    .. note::
-        This model was added using data from anker-solix-api. It has not been
-        tested!
-
-    .. note::
-        It should be possible to add more sensors. I think devices with lots of
-        telemetry values split them up into multiple messages but I have not
-        played around with this yet. That and I am being a bit conservative with
-        these initial implementations, if you want more sensors and are willing
-        to help with testing feel free to raise a GitHub issue.
-
     """
 
-    _EXPECTED_TELEMETRY_LENGTH: int = 198
+    _TELEMETRY_COMMANDS = ("4303")
+
+    async def _keep_alive(self) -> int | None:
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_SUB_AND_KEEP_ALIVE),
+            payload=bytes.fromhex(SUB_AND_KEEP_ALIVE_PAYLOAD),
+        )
+        return KEEP_ALIVE_INTERNAL
 
     @property
     def usb_port_c1(self) -> PortStatus:
