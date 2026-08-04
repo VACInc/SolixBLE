@@ -76,6 +76,7 @@ class SolixBLEDevice:
         self._state_changed_callbacks: list[Callable[[], None]] = []
         self._packet_futures: dict[bytes, list[asyncio.Future]] = {}
         self._auto_reconnect_task: asyncio.Task | None = None
+        self._keep_alive_task: asyncio.Task | None = None
         self._disconnect_event: asyncio.Event = asyncio.Event()
         self._connection_attempts: int = 0
         self._shared_secret: bytes | None = None
@@ -213,6 +214,10 @@ class SolixBLEDevice:
         if self._auto_reconnect_task is None:
             self._auto_reconnect_task = asyncio.create_task(self._auto_reconnect())
 
+        # Start a keep-alive task if its not running already
+        if self._keep_alive_task is None:
+            self._keep_alive_task = asyncio.create_task(self._keep_alive_fn())
+
         # Execute callbacks if enabled
         if run_callbacks:
             self._run_state_changed_callbacks()
@@ -230,6 +235,26 @@ class SolixBLEDevice:
         """
         pass
 
+    async def _keep_alive(self) -> int | None:
+        """Execute designated keep-alive command periodically after good negotiation.
+
+        Use this to execute code periodically that is needed to keep the
+        connection. For example some devices need a special keep alive command
+        to keep receiving telemetry updates that must be sent every ~10 seconds.
+
+        This is automatically executed in a task created by :meth:`connect` once
+        the encrypted session has been negotiated (so :meth:`_send_command`
+        may be used) and on every automatic reconnect, with it not being
+        executed when not connected or negotiated.
+
+        The default implementation does nothing; subclasses can override it to,
+        for example, send a subscribe command to keep a telemetry stream (see
+        :class:`~SolixBLE.devices.prime_charger_250w.PrimeCharger250w`).
+
+        :returns: Seconds to wait before calling again or None for not implemented.
+        """
+        return None
+
     async def disconnect(self) -> None:
         """Disconnect from device and reset internal state.
 
@@ -241,6 +266,10 @@ class SolixBLEDevice:
         # Cancel the automatic reconnection task
         if self._auto_reconnect_task is not None:
             self._auto_reconnect_task.cancel()
+
+        # Cancel the keep-alive task
+        if self._keep_alive_task is not None:
+            self._keep_alive_task.cancel()
 
         # If there is a client disconnect and throw it away
         if self._client is not None:
@@ -1024,6 +1053,39 @@ class SolixBLEDevice:
 
         except Exception:
             _LOGGER.exception("Unexpected exception in automatic reconnect task!")
+
+
+    async def _keep_alive_fn(self) -> None:
+        """Task designed to be run in background to execute keep-alive.
+
+        This task is executed automatically when a successful connection
+        is made and will periodically execute the keep alive function if
+        one exists.
+
+        This background task is cancelled when the connection is lost.
+        """
+        try:
+            while self.negotiated:
+
+                try:
+                    _LOGGER.debug("Executing keep-alive...")
+                    result = await self._keep_alive()
+
+                    if result is None:
+                        _LOGGER.debug("No keep-alive task registered, stopping task...")
+                        return
+
+                    _LOGGER.debug(f"Executing keep-alive in {result}s")
+                    await asyncio.sleep(result)
+
+                except Exception:
+                    _LOGGER.exception("Exception raised executing keep-alive function!")
+
+        except asyncio.CancelledError:
+            _LOGGER.debug("Keep-alive task has been canceled/stopped")
+
+        except Exception:
+            _LOGGER.exception("Unexpected exception in keep-alive task!")
 
     def _disconnect_callback(self, client: BaseBleakClient) -> None:
         """Callback executed by bleak when the connection is lost.
