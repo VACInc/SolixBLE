@@ -136,9 +136,9 @@ Parameter               250w (A2345)  160w (A2687)  MagGo 3in1 (A25X7)
 ======================= ============= ============= ===================
 Display status           ❌            ❌            ❌
 Total power out          ❌            ❌            ✅
-Port on/off control      ❌            ✅            ❌
+Port on/off control      ✅            ✅            ❌
 Port protocol control    ❌            ❌            ❌
-Timer control            ❌            ✅            ❌
+Timer control            ✅            ✅            ❌
 Individual port status   ✅            ✅            ✅
 Individual port voltage  ✅            ✅            ❌
 Individual port current  ✅            ✅            ❌
