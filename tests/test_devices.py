@@ -33,6 +33,7 @@ from SolixBLE import (
     SolixBLEDevice,
     TemperatureUnit,
 )
+from SolixBLE.devices.f3800 import F3800
 from SolixBLE.devices.solarbank2 import MaxLoadSB2
 from SolixBLE.states import GridStatus, LightMode, SBPowerCutoff, SBUsageMode
 from tests.const import (
@@ -1154,125 +1155,203 @@ async def test_c1000g2_dc_control() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "method,args,cmd,payload",
+    ("device_class", "method", "args", "cmd", "payload"),
     [
-        pytest.param("turn_ac_on", (), "404a", "a10121a2020101", id="ac_on"),
-        pytest.param("turn_ac_off", (), "404a", "a10121a2020100", id="ac_off"),
-        pytest.param("turn_dc_on", (), "404b", "a10121a2020101", id="dc_on"),
-        pytest.param("turn_dc_off", (), "404b", "a10121a2020100", id="dc_off"),
         pytest.param(
+            F2600,
+            "turn_ac_on",
+            (),
+            "404a",
+            "a10121a2020101",
+            id="f2600_ac_on",
+        ),
+        pytest.param(
+            F2600,
+            "turn_ac_off",
+            (),
+            "404a",
+            "a10121a2020100",
+            id="f2600_ac_off",
+        ),
+        pytest.param(
+            F2600,
+            "turn_dc_on",
+            (),
+            "404b",
+            "a10121a2020101",
+            id="f2600_dc_on",
+        ),
+        pytest.param(
+            F2600,
+            "turn_dc_off",
+            (),
+            "404b",
+            "a10121a2020100",
+            id="f2600_dc_off",
+        ),
+        pytest.param(
+            F2600,
             "turn_display_on",
             (),
             "4052",
             "a10121a2020101",
-            id="display_on",
+            id="f2600_display_on",
         ),
         pytest.param(
+            F2600,
             "turn_display_off",
             (),
             "4052",
             "a10121a2020100",
-            id="display_off",
+            id="f2600_display_off",
         ),
         pytest.param(
+            F2600,
             "turn_power_saving_mode_on",
             (),
             "404e",
             "a10121a2020101",
-            id="power_saving_on",
+            id="f2600_power_saving_on",
         ),
         pytest.param(
+            F2600,
             "turn_power_saving_mode_off",
             (),
             "404e",
             "a10121a2020100",
-            id="power_saving_off",
+            id="f2600_power_saving_off",
         ),
         # Timers take a 32 bit little endian second count. Zero cancels.
         pytest.param(
+            F2600,
             "set_ac_timer",
             (3600,),
             "4042",
             "a10121a20502100e0000",
-            id="ac_timer_1h",
+            id="f2600_ac_timer_1h",
         ),
         pytest.param(
+            F2600,
             "set_ac_timer",
             (0,),
             "4042",
             "a10121a2050200000000",
-            id="ac_timer_cancel",
+            id="f2600_ac_timer_cancel",
         ),
         pytest.param(
+            F2600,
             "set_dc_timer",
             (1800,),
             "4043",
             "a10121a2050208070000",
-            id="dc_timer_30m",
+            id="f2600_dc_timer_30m",
         ),
         # Light and display brightness take a single byte enum value.
         pytest.param(
+            F2600,
             "set_light_mode",
             (LightStatus.OFF,),
             "404f",
             "a10121a2020100",
-            id="light_off",
+            id="f2600_light_off",
         ),
         pytest.param(
+            F2600,
             "set_light_mode",
             (LightStatus.HIGH,),
             "404f",
             "a10121a2020103",
-            id="light_high",
+            id="f2600_light_high",
         ),
         pytest.param(
+            F2600,
             "set_display_mode",
             (LightStatus.MEDIUM,),
             "404c",
             "a10121a2020102",
-            id="display_medium",
+            id="f2600_display_medium",
         ),
         # Display timeout and AC charging power take a 16 bit little endian value.
         pytest.param(
+            F2600,
             "set_display_timeout",
             (DisplayTimeout.S300,),
             "4046",
             "a10121a203022c01",
-            id="display_timeout_5m",
+            id="f2600_display_timeout_5m",
         ),
         pytest.param(
+            F2600,
             "set_display_timeout",
             (DisplayTimeout.S1800,),
             "4046",
             "a10121a203020807",
-            id="display_timeout_30m",
+            id="f2600_display_timeout_30m",
         ),
         pytest.param(
+            F2600,
             "set_ac_charging_power",
             (1000,),
             "4044",
             "a10121a20302e803",
-            id="ac_charging_power_1000w",
+            id="f2600_ac_charging_power_1000w",
         ),
         # Both ends of the accepted range.
         pytest.param(
+            F2600,
             "set_ac_charging_power",
             (100,),
             "4044",
             "a10121a203026400",
-            id="ac_charging_power_min",
+            id="f2600_ac_charging_power_min",
         ),
         pytest.param(
+            F2600,
             "set_ac_charging_power",
             (1440,),
             "4044",
             "a10121a20302a005",
-            id="ac_charging_power_max",
+            id="f2600_ac_charging_power_max",
+        ),
+        pytest.param(
+            F3800,
+            "turn_ac_on",
+            (),
+            "404a",
+            "a10121a2020101",
+            id="f2600_ac_on",
+        ),
+        pytest.param(
+            F3800,
+            "turn_ac_off",
+            (),
+            "404a",
+            "a10121a2020100",
+            id="f2600_ac_off",
+        ),
+        pytest.param(
+            F3800,
+            "turn_dc_on",
+            (),
+            "404b",
+            "a10121a2020101",
+            id="f2600_dc_on",
+        ),
+        pytest.param(
+            F3800,
+            "turn_dc_off",
+            (),
+            "404b",
+            "a10121a2020100",
+            id="f2600_dc_off",
         ),
     ],
 )
-async def test_f2600_commands(
-    method: str, args: tuple[Any, ...], cmd: str, payload: str
+async def test_control_commands(
+    device_class: type[SolixBLEDevice],
+    method: str, 
+    args: tuple[Any, ...],
+    cmd: str, payload: str,
 ) -> None:
     """
     Test that an F2600 control method dispatches the correct command.
@@ -1282,13 +1361,12 @@ async def test_f2600_commands(
     :param cmd: Expected command bytes.
     :param payload: Expected payload bytes.
     """
-    device = F2600(MOCK_BLE_DEVICE)
+    device = device_class(MOCK_BLE_DEVICE)
     device._send_command = mock.AsyncMock()
-
     await getattr(device, method)(*args)
 
     device._send_command.assert_awaited_once_with(
-        cmd=bytes.fromhex(cmd), payload=bytes.fromhex(payload)
+        cmd=bytes.fromhex(cmd), payload=bytes.fromhex(payload),
     )
 
 
