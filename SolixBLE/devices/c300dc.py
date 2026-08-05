@@ -296,7 +296,7 @@ class C300DC(SolixBLEDevice):
         return PortStatus(self._parse_int("be", begin=1))
 
     @property
-    def dc_port(self) -> PortStatus:
+    def dc_output(self) -> PortStatus:
         """DC Port Status.
 
         :returns: Status of the DC port.
