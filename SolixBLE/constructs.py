@@ -9,6 +9,7 @@ decoding the packet format used by Anker devices.
 
 import operator
 from functools import reduce
+from typing import Any
 
 from construct import (
     BitStruct,
@@ -32,6 +33,22 @@ from construct import (
 )
 
 from SolixBLE.utilities import _to_bytes
+
+
+def _get_val(obj: Any, key: str, default: Any=None) -> Any:
+    """
+    Return value from dictionary, container, objects, or None.
+
+    :param obj: Object to extract value from.
+    :param key: The key or property to extract from the object.
+    :param default: Default to return if not found.
+    :returns: Found value or default.
+    """
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
 
 Packet = ExprAdapter(
 
@@ -73,10 +90,10 @@ Packet = ExprAdapter(
     encoder=lambda p, _: {
             "content": {
                 "value": {
-                    "header": _to_bytes(getattr(p, "header", "ff09")),
-                    "pattern": _to_bytes(p.pattern),
-                    "cmd": _to_bytes(p.cmd),
-                    "payload_bytes": _to_bytes(p.payload_bytes),
+                    "header": _to_bytes(_get_val(p, "header", "ff09")),
+                    "pattern": _to_bytes(_get_val(p, "pattern")),
+                    "cmd": _to_bytes(_get_val(p, "cmd")),
+                    "payload_bytes": _to_bytes(_get_val(p, "payload_bytes", b"")),
                 },
             },
     },
@@ -150,7 +167,10 @@ Parameter = Struct(
     ),
 
     # Optional type of the parameter
-    "type" / If(this.length > 0, Int8ul),
+    "type" / If(
+        lambda p: p.get("type") is not None if p._building else p.length > 1,
+        Int8ul,
+    ),
 
     # Optional content of the parameter
     "value" / If(
@@ -190,10 +210,14 @@ class ParameterDict(dict):
 
     """
 
+    def __init__(self, *args, prefix: bytes | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.prefix = prefix
+
     def to_legacy(self) -> dict[str, bytes]:
         """Return legacy format of paramaters."""
         return {k:
-            (v.type.to_bytes(1) if v else b"") +
+            (v.type.to_bytes(1) if v and v.type else b"") +
             (v.value or b"")
         for k, v in self.items()}
 
@@ -202,14 +226,20 @@ Parameters = ExprAdapter(
     Struct(
 
         # 0x00 optional prefix
-        "prefix" / Optional(Const(bytes.fromhex("00"))),
+        "prefix" / If(
+            this._parsing or (this._building and this._.prefix is not None),
+            Optional(Const(bytes.fromhex("00"))),
+        ),
 
         # List of parameters
         "parameters" / GreedyRange(Parameter),
     ),
-    decoder=lambda ps, _: ParameterDict({p.key.hex(): p for p in ps.parameters}),
+    decoder=lambda obj, _: ParameterDict(
+        {p.key.hex(): p for p in obj.parameters},
+        prefix=obj.prefix,
+    ),
     encoder=lambda ps, _: {
-        "prefix": None,
+        "prefix": getattr(ps, "prefix", None),
         "parameters": list(ps.values()) if isinstance(ps, dict) else ps,
     },
 )

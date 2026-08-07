@@ -599,6 +599,25 @@ class SolixBLEDevice:
 
             return None
 
+    async def _send_packet(self, pattern: str, cmd: str, parameters: dict) -> None:
+        """Build and send packet to device."""
+
+        _LOGGER.debug(f"Building payload with parameters: {parameters}")
+        payload = Parameters.build(parameters)
+        _LOGGER.debug(f"Payload bytes: {payload.hex()}")
+        encrypted_payload = self._encrypt_payload(payload)
+
+        _LOGGER.debug(f"Building packet with pattern: {pattern} and cmd: {cmd}...")
+        packet = Packet.build({
+            "pattern": bytes.fromhex(pattern),
+            "cmd": bytes.fromhex(cmd),
+            "payload_bytes": encrypted_payload,
+        })
+        _LOGGER.debug(f"Built packet: {packet.hex()}")
+        _LOGGER.debug("Sending packet...")
+        await self._client.write_gatt_char(UUID_COMMAND, packet)
+        _LOGGER.debug("Packet sent!")
+
     async def _process_negotiation(self, cmd: bytes, payload: bytes) -> None:
         """Negotiate encryption with the device."""
 

@@ -46,7 +46,7 @@ async def discover_devices(
 
     return devices
 
-def _to_bytes(data: bytes | str | int, length: int = 1, signed: bool = False) -> bytes:
+def _to_bytes(data: bytes | str | int | None, length: int = 1, signed: bool = False) -> bytes:
     """Return input in byte form.
 
     :param data: Data to convert to bytes.
@@ -55,6 +55,8 @@ def _to_bytes(data: bytes | str | int, length: int = 1, signed: bool = False) ->
     :returns: Byte form of input.
     :raises ValueError: If input type unsupported.
     """
+    if data is None:
+        return b""
     if isinstance(data, bytes):
         return data
     if type(data) is str:
