@@ -26,6 +26,8 @@ from cryptography.hazmat.primitives.asymmetric.ec import (
 )
 from cryptography.hazmat.primitives.padding import PKCS7
 
+from SolixBLE.constructs import FragmentedPayload, Packet, ParameterDict, Parameters
+
 from .const import (
     BASE_TIMESTAMP,
     DEFAULT_METADATA_INT,
@@ -57,6 +59,9 @@ class SolixBLEDevice:
     #: (e.g the C1000 Gen 2 uses ``c421``/``c900`` instead of ``c402``/``c405``).
     _TELEMETRY_COMMANDS: tuple[str, ...] = ("c402", "4300", "c405")
 
+    #: The maximum packet size an Anker device is able to send
+    _MAX_PACKET_SIZE = 253
+
     def __init__(self, ble_device: BLEDevice) -> None:
         """Initialise device object. Does not connect automatically."""
 
@@ -67,8 +72,7 @@ class SolixBLEDevice:
 
         self._ble_device: BLEDevice = ble_device
         self._client: BleakClient | None = None
-        self._fragment_buffers: dict[bytes, dict[int, bytes]] = {}
-        self._fragment_totals: dict[bytes, int] = {}
+        self._fragment_buffers: dict[bytes, list[FragmentedPayload]] = {}
         self._data: dict[str, bytes] | None = None
         self._last_data_timestamp: datetime | None = None
         self._last_packet_timestamp: datetime | None = None
@@ -367,134 +371,13 @@ class SolixBLEDevice:
             else DEFAULT_METADATA_STRING
         )
 
-    def _split_packet(self, packet: bytes) -> tuple[bytes, bytes, bytes]:
-        """Validate packet and split into pattern, command, and payload bytes."""
-
-        packet_copy = bytearray(packet)
-
-        # Validate header is correct
-        packet_header = bytes([packet_copy.pop(0), packet_copy.pop(0)])
-        if packet_header != bytes.fromhex("ff09"):
-            raise ValueError("Packet does not start with FF09!")
-
-        # Validate encoded length is correct
-        packet_length = int.from_bytes(
-            bytes([packet_copy.pop(0), packet_copy.pop(0)]), byteorder="little"
-        )
-        if packet_length != len(packet):
-            raise ValueError(
-                f"Packet length is encoded as {packet_length} but its length was {len(packet)}!"
-            )
-
-        # Validate checksum is correct
-        packet_checksum = packet_copy.pop(-1).to_bytes()
-        if packet_checksum != self._checksum(packet[:-1]):
-            raise ValueError(
-                f"Packet checksum is encoded as {packet_checksum.hex()} but it is actually {self._checksum(packet[:-1]).hex()}!"
-            )
-
-        # Extract pattern
-        packet_pattern = bytes(
-            [packet_copy.pop(0), packet_copy.pop(0), packet_copy.pop(0)]
-        )
-
-        # Extract command
-        packet_cmd = bytes([packet_copy.pop(0), packet_copy.pop(0)])
-
-        # Extract payload
-        packet_payload = bytes(packet_copy)
-
-        return packet_pattern, packet_cmd, packet_payload
-
-    def _parse_payload(self, payload: bytearray | bytes) -> dict[str, bytes]:
-        """
-        Parse payload bytes into parameters.
-
-        Payloads contain a list of parameters and these parameters
-        have a format of: <id 1B> <len 1-2B> <type 1B> <data nB>.
-
-        If an error occurs when decoding a parameter it prevents all
-        further parameters from being parsed and logs an exception,
-        but the successfully parsed parameters (if any) will be returned.
-
-        :param payload: Payload to parse into parameters.
-        :returns: Dictionary mapping parameter ids (a1, a2, ...) to data.
-        """
-
-        def _verbose_pop(data: bytearray, length: int, name: str) -> bytes:
-            """
-            Pop specified number of bytes from bytearray and log if error.
-
-            :param data: Data to be popped.
-            :param length: Number of bytes to pop and return.
-            :param name: Name of value being popped to put in logs if error.
-            :raises IndexError: If popping fails.
-            """
-
-            # Copy of bytes to use in error message if needed
-            data_copy = bytes(data)
-
-            # Bytes extracted so far
-            new_bytes = bytes([])
-
-            try:
-                # Pop length bytes from data and return
-                for _ in range(length):
-                    new_bytes = new_bytes + bytes([data.pop(0)])
-                return new_bytes
-
-            # Build error message
-            except IndexError as e:
-                message = (
-                    f"Error extracting {name} (len={length}) from '{data_copy.hex()}'"
-                    f" (len={len(data_copy)}) at index {len(new_bytes)}. We extracted:"
-                    f" '{new_bytes.hex()}' but expected {length - len(data_copy)}"
-                    f" more bytes!"
-                )
-                _LOGGER.exception(message)
-                raise IndexError(message) from e
-
-        parsed_data: dict[str, bytes] = {}
-        remaining_data = bytearray(payload)
-
-        # Payloads sometimes start with 00 and we must strip that
-        if remaining_data.startswith(bytes.fromhex("00")):
-            _LOGGER.debug("Stripped 00 from start of payload")
-            _verbose_pop(remaining_data, 1, "special 00 header")
-
-        while len(remaining_data) != 0:
-            try:
-                # Extract param id (e.g a1, a2, ...)
-                param_id = _verbose_pop(remaining_data, 1, "param_id").hex()
-
-                # Sometimes there is just a param_id with no length or values
-                if len(remaining_data) == 0:
-                    parsed_data[param_id] = bytes()
-                    break
-
-                # Extract encoded length of parameter
-                param_len = int.from_bytes(
-                    _verbose_pop(remaining_data, 1, f"param_len (id={param_id})")
-                )
-
-                # Extract data/body from parameter
-                param_data = _verbose_pop(
-                    remaining_data, param_len, f"param_data (id={param_id})"
-                )
-                parsed_data[param_id] = param_data
-
-            except IndexError:
-                _LOGGER.exception(
-                    f"Unexpected end of packet! Data may be missing or invalid!"
-                    f" Extracted so far: '{self._parameters_to_str(parsed_data)}'."
-                    f" Payload: '{payload.hex()}'"
-                )
-
-        return parsed_data
-
     def _parameters_to_str(
         self, parameters: dict[str, bytes], types: bool = False
     ) -> str:
+        new_value = ""
+        if type(parameters) is ParameterDict:
+            new_value = str(parameters)
+            parameters = parameters.to_legacy()
         if types:
             with_types = {
                 k: {
@@ -505,7 +388,7 @@ class SolixBLEDevice:
                 }
                 for k, v in parameters.items()
             }
-            return json.dumps(with_types, indent=4, sort_keys=True)
+            return f"New format: \n{new_value}\nLegacy format:\n" + json.dumps(with_types, indent=4, sort_keys=True)
         else:
             return str({k: v.hex() for k, v in parameters.items()})
 
@@ -547,62 +430,10 @@ class SolixBLEDevice:
         )
         return cipher.encrypt(padded_data)
 
-    async def _process_telemetry_packet(
-        self, payload: bytes, cmd: bytes = None
-    ) -> None:
-        """Process a telemetry packet from the device.
-
-        This performs the default processing of telemetry packets in which
-        telemetry payloads are spread across multiple packets. This is
-        overridden for devices which do not use multi-packet payloads for
-        telemetry.
-        """
-
-        # First byte encodes fragment info (high nibble = index, low = total)
-        fragment_index = (payload[0] >> 4) & 0x0F
-        fragment_total = payload[0] & 0x0F
-
-        # Multi-part message
-        if fragment_total > 1:
-            fragment_data = payload[1:]
-            cmd_key = bytes(cmd)
-            _LOGGER.debug(
-                f"Fragment {fragment_index}/{fragment_total} for cmd {cmd.hex()}, {len(fragment_data)} bytes"
-            )
-
-            # Store fragment
-            if cmd_key not in self._fragment_buffers or fragment_index == 1:
-                self._fragment_buffers[cmd_key] = {}
-                self._fragment_totals[cmd_key] = fragment_total
-
-            self._fragment_buffers[cmd_key][fragment_index] = fragment_data
-
-            # Wait until all fragments have arrived
-            if len(self._fragment_buffers[cmd_key]) < fragment_total:
-                _LOGGER.debug("Waiting for remaining fragments...")
-                return
-
-            # Reassemble in order
-            payload = b"".join(
-                self._fragment_buffers[cmd_key][i]
-                for i in sorted(self._fragment_buffers[cmd_key])
-            )
-            del self._fragment_buffers[cmd_key]
-            del self._fragment_totals[cmd_key]
-            _LOGGER.debug(f"Reassembled payload: {len(payload)} bytes")
-
-        else:
-            # Strip fragment info
-            payload = payload[1:]
-
-        decrypted_payload = self._decrypt_payload(payload)
-        _LOGGER.debug(f"Decrypted payload: {decrypted_payload.hex()}")
-        parameters = self._parse_payload(decrypted_payload)
-        return await self._process_telemetry(parameters)
-
-    async def _process_telemetry(self, parameters: dict[str, bytes]) -> None:
+    async def _process_telemetry(self, parameters: Parameters) -> None:
         """Process telemetry data from the device."""
 
+        parameters = parameters.to_legacy()
         state_changed = self._data is None or parameters != self._data
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
@@ -634,95 +465,139 @@ class SolixBLEDevice:
             _LOGGER.debug(self)
             self._run_state_changed_callbacks()
 
+    def _reassemble(self, packet: Packet) -> bytes | None:
+        """
+        Re-assemble a packet.
+
+        Given a packet containing a fragment of a payload, re-assemble
+        it if all fragments are available and return it, else return
+        None.
+
+        :param packet: The packet to be re-assembled.
+        :returns: Payload bytes if re-assembled.
+        :returns: None if not all fragments are available.
+        """
+        # Parse payload
+        payload = FragmentedPayload.parse(packet.payload_bytes)
+
+        _LOGGER.debug(f"Received fragment {payload.frag.index}/{payload.frag.total} for p: {packet.pattern.hex()}, c: {packet.cmd.hex()}")
+
+        # Get existing fragments or create list of one does not exist
+        fragments = self._fragment_buffers.get(packet.pattern + packet.cmd)
+        if fragments is None:
+            fragments = []
+            self._fragment_buffers[packet.pattern + packet.cmd] = fragments
+
+        # Add to list of fragments
+        fragments.append(payload)
+
+        # If out of order then ignore and clear buffers
+        if payload.frag.index != len(fragments):
+            _LOGGER.debug("Fragment is out of order, ignoring and clearing buffers!")
+            fragments.clear()
+            return None
+
+        # If not all fragments available return
+        if payload.frag.total != len(fragments):
+            _LOGGER.debug("Not all fragments available for reassembly!")
+            return None
+
+        _LOGGER.debug("Re-assembling payload from fragments...")
+
+        # Assemble fragment payloads in order
+        complete_payload = bytearray()
+        for x in sorted(fragments, key=lambda p: int(p.frag.index)):
+            complete_payload.extend(x.data)
+
+        # Clear fragment cache for this message cmd and return
+        fragments.clear()
+        return bytes(complete_payload)
+
     async def _process_notification(
         self, client: BleakClient, handle: int, data: bytearray
     ) -> None:
         """Process a notification from the device."""
 
-        _LOGGER.debug(f"The client the notification is from: {client}")
+        try:
 
-        if self._client is not client:
-            _LOGGER.debug("Ignoring notification from old client")
-            return
+            _LOGGER.debug(f"The client the notification is from: {client}")
 
-        # Split packet into pattern, command, and payload
-        _LOGGER.debug(
-            f"Received notification from '{self.name}'. length: {len(data)}, packet: '{data.hex()}'"
-        )
-        self._last_packet_timestamp = time.time()
-        pattern, cmd, payload = self._split_packet(data)
-        _LOGGER.debug(f"Pattern: {pattern.hex()}")
-        _LOGGER.debug(f"CMD: {cmd.hex()}")
-        _LOGGER.debug(f"Payload: {payload.hex()}")
-        _LOGGER.debug(f"Payload length: {len(payload)}")
+            if self._client is not client:
+                _LOGGER.debug("Ignoring notification from old client")
+                return None
 
-        # If the packet has a future registered then we just trigger that
-        # future instead of processing it here
-        if pattern + cmd in self._packet_futures:
+            # Log reception of packet
             _LOGGER.debug(
-                "Packet has future(s) registered. Triggering future(s) and ignoring packet..."
+                f"Received notification from '{self.name}'. length: {len(data)}, packet: '{data.hex()}'"
             )
-            for future in self._packet_futures[pattern + cmd]:
-                future.set_result(payload)
-            return
+            self._last_packet_timestamp = time.time()
 
-        # Match against common message types
-        match pattern.hex():
+            # Parse packet
+            packet = Packet.parse(data)
+            _LOGGER.debug(f"Packet: {packet}")
+            pattern = packet.pattern
+            cmd = packet.cmd
+            payload = packet.payload_bytes
 
-            # Negotiation messages
-            case "030001":
-                _LOGGER.debug("Received negotiation message!")
-                return await self._process_negotiation(cmd, payload)
+            # If fragmented re-assemble when all fragments available
+            if (len(data) == self._MAX_PACKET_SIZE or
+                pattern + cmd in self._fragment_buffers):
 
-            # Session messages
-            case "03010f" | "030111":
+                payload = self._reassemble(packet)
+                if payload is None:
+                    return None
 
-                # Non-encrypted telemetry messages
-                if cmd.hex() == "0300":
-                    _LOGGER.debug("Received non-encrypted telemetry message!")
-                    parameters = self._parse_payload(payload)
-                    return await self._process_telemetry(parameters)
-
-                # Encrypted telemetry messages
-                elif cmd.hex() in self._TELEMETRY_COMMANDS:
-                    _LOGGER.debug("Received encrypted telemetry message!")
-                    return await self._process_telemetry_packet(payload, cmd)
-
-                # Unknown messages
-                else:
-                    _LOGGER.debug(f"Received unknown message of type: {cmd.hex()}")
-                    try:
-
-                        # If the payload is one byte too short and we are
-                        # using the default AES (CBC) then try putting the
-                        # last byte of the cmd in front of it
-                        if (
-                            len(payload) % 16 == 15
-                            and self._decrypt_payload
-                            is SolixBLEDevice._decrypt_payload
-                        ):
-                            _LOGGER.debug(
-                                "Using special trick of embedded part of CMD in payload..."
-                            )
-                            payload = cmd[1].to_bytes() + payload
-
-                        decrypted_payload = self._decrypt_payload(payload)
-                        _LOGGER.debug(
-                            f"Decrypted payload: {decrypted_payload.hex()}"
-                        )
-                        parameters = self._parse_payload(decrypted_payload)
-                        _LOGGER.debug(
-                            f"Parameters: {self._parameters_to_str(parameters, types=True)}"
-                        )
-                    except Exception:
-                        _LOGGER.exception(
-                            "Exception decrypting unknown message type"
-                        )
-
-            case _:
-                _LOGGER.warning(
-                    f"Unexpected packet type '{pattern}' sent by device! Packet: {data.hex()}"
+            # If the packet has a future registered then we just trigger that
+            # future instead of processing it here
+            if pattern + cmd in self._packet_futures:
+                _LOGGER.debug(
+                    "Packet has future(s) registered. Triggering future(s) and ignoring packet..."
                 )
+                for future in self._packet_futures[pattern + cmd]:
+
+                    # Decrypt payload
+                    payload = self._decrypt_payload(payload)
+                    future.set_result(payload)
+                return None
+
+            # Match against common message types
+            match pattern.hex():
+
+                # Negotiation messages
+                case "030001":
+                    _LOGGER.debug("Received negotiation message!")
+                    return await self._process_negotiation(cmd, payload)
+
+                # Session messages
+                case "03010f" | "030111":
+
+                    # Non-encrypted telemetry messages
+                    if cmd.hex() == "0300":
+                        _LOGGER.debug("Received non-encrypted telemetry message!")
+                        parameters = Parameters.parse(payload)
+                        return await self._process_telemetry(parameters)
+
+                    # Encrypted telemetry messages
+                    elif cmd.hex() in self._TELEMETRY_COMMANDS:
+                        _LOGGER.debug("Received encrypted telemetry message!")
+                        decrypted_payload = self._decrypt_payload(payload)
+                        parameters = Parameters.parse(decrypted_payload)
+                        _LOGGER.debug(f"WE GOT: {parameters}")
+                        return await self._process_telemetry(parameters)
+
+                    # Unknown messages
+                    else:
+                        _LOGGER.debug(f"Received unknown message of type: {cmd.hex()}")
+
+                case _:
+                    _LOGGER.warning(
+                        f"Unexpected packet type '{pattern}' sent by device! Packet: {data.hex()}"
+                    )
+
+        except Exception:
+            _LOGGER.exception(f"Failed to process packet from {self.name}!")
+
+            return None
 
     async def _process_negotiation(self, cmd: bytes, payload: bytes) -> None:
         """Negotiate encryption with the device."""
@@ -739,7 +614,7 @@ class SolixBLEDevice:
                 _LOGGER.debug(
                     "Entered negotiation stage 1 due to response from device!"
                 )
-                parameters = self._parse_payload(payload)
+                parameters = Parameters.parse(payload)
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
                 _LOGGER.debug("Sending stage 1 response message...")
                 return await self._client.write_gatt_char(
@@ -751,7 +626,7 @@ class SolixBLEDevice:
                 _LOGGER.debug(
                     "Entered negotiation stage 2 due to response from device!"
                 )
-                parameters = self._parse_payload(payload)
+                parameters = Parameters.parse(payload)
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
                 _LOGGER.debug("Sending stage 2 response message...")
                 return await self._client.write_gatt_char(
@@ -763,7 +638,7 @@ class SolixBLEDevice:
                 _LOGGER.debug(
                     "Entered negotiation stage 3 due to response from device!"
                 )
-                parameters = self._parse_payload(payload)
+                parameters = Parameters.parse(payload)
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
                 self._negotiation_timestamp = time.time()
                 _LOGGER.debug("Sending stage 3 response message...")
@@ -776,7 +651,7 @@ class SolixBLEDevice:
                 _LOGGER.debug(
                     "Entered negotiation stage 4 due to response from device!"
                 )
-                parameters = self._parse_payload(payload)
+                parameters = Parameters.parse(payload)
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
                 _LOGGER.debug("Sending stage 4 response message...")
                 return await self._client.write_gatt_char(
@@ -788,11 +663,11 @@ class SolixBLEDevice:
                 _LOGGER.debug(
                     "Entered negotiation stage 5 due to response from device!"
                 )
-                parameters = self._parse_payload(payload)
+                parameters = Parameters.parse(payload)
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
 
                 # Extract public key of device from payload
-                device_public_key_bytes = bytes.fromhex("04") + parameters["a1"]
+                device_public_key_bytes = bytes.fromhex("04") + parameters["a1"].type.to_bytes(1) + parameters["a1"].value
                 _LOGGER.debug(f"Public key of device: {device_public_key_bytes.hex()}")
                 device_public_key = EllipticCurvePublicKey.from_encoded_point(
                     SECP256R1(), device_public_key_bytes
@@ -822,10 +697,11 @@ class SolixBLEDevice:
                     "Entered negotiation stage 6 (optional) due to response from device!"
                 )
                 decrypted_payload = self._decrypt_payload(payload)
-                parameters = self._parse_payload(decrypted_payload)
+                parameters = Parameters.parse(decrypted_payload)
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
 
             case _:
+                parameters = Parameters.parse(payload)
                 _LOGGER.warning(
                     f"Received unexpected negotiation request response from device! cmd: '{cmd}', parameters: '{self._parameters_to_str(parameters)}'"
                 )

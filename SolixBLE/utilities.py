@@ -45,3 +45,20 @@ async def discover_devices(
         await asyncio.sleep(timeout)
 
     return devices
+
+def _to_bytes(data: bytes | str | int, length: int = 1, signed: bool = False) -> bytes:
+    """Return input in byte form.
+
+    :param data: Data to convert to bytes.
+    :param: length: Length if converting int.
+    :param signed: Sign if converting int.
+    :returns: Byte form of input.
+    :raises ValueError: If input type unsupported.
+    """
+    if isinstance(data, bytes):
+        return data
+    if type(data) is str:
+        return bytes.fromhex(data)
+    if type(data) is int:
+        return int.to_bytes(data, length, "little", signed)
+    raise ValueError(f"Unable to convert '{type(data)}' to bytes!")

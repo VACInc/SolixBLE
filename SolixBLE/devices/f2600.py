@@ -8,12 +8,13 @@
 import logging
 from datetime import datetime, timedelta
 
+from SolixBLE.constructs import Parameters
+
 from ..const import (
     DEFAULT_METADATA_BOOL,
     DEFAULT_METADATA_INT,
 )
 from ..states import ChargingStatus, DisplayTimeout, LightStatus, PortStatus
-
 from . import F2000
 
 CMD_AC_TIMER = "4042"
@@ -478,24 +479,15 @@ class F2600(F2000):
             payload=bytes.fromhex("a10121"),
         )
 
-        packet_1 = await self._listen_for_packet(
+        payload = await self._listen_for_packet(
             bytes.fromhex("03010f"), bytes.fromhex("c840")
         )
-        if not packet_1:
-            raise TimeoutError("Timed out waiting for packet 1!")
+        if not payload:
+            raise TimeoutError("Timed out waiting for payload!")
 
-        packet_2 = await self._listen_for_packet(
-            bytes.fromhex("03010f"), bytes.fromhex("c840")
-        )
-        if not packet_2:
-            raise TimeoutError("Timed out waiting for packet 2!")
-
-        # We need to ignore the first byte of each packet with these types
-        new_payload = packet_1[1:] + packet_2[1:]
-        decrypted_payload = self._decrypt_payload(new_payload)
-        parameters = self._parse_payload(decrypted_payload)
+        parameters = Parameters.parse(payload)
         _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters, types=True)}")
         await self._process_telemetry(
-            parameters
+            parameters,
         )  # update the internal parameters as well
-        return parameters
+        return parameters.to_legacy()

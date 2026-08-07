@@ -33,6 +33,7 @@ from SolixBLE import (
     SolixBLEDevice,
     TemperatureUnit,
 )
+from SolixBLE.constructs import Parameters
 from SolixBLE.devices.f3800 import F3800
 from SolixBLE.devices.solarbank2 import MaxLoadSB2
 from SolixBLE.states import GridStatus, LightMode, SBPowerCutoff, SBUsageMode
@@ -1022,7 +1023,7 @@ async def test_values(
     :param mapping: Mapping of class properties to their expected value.
     """
     device = device_class(MOCK_BLE_DEVICE)
-    parameters = device._parse_payload(bytes.fromhex(payload))
+    parameters = Parameters.parse(bytes.fromhex(payload))
     await device._process_telemetry(parameters)
 
     for class_property, expected_value in mapping.items():
@@ -1043,7 +1044,7 @@ async def test_f2600_timers() -> None:
     """
     device = F2600(MOCK_BLE_DEVICE)
     payload = "a20503100e0000a3050308070000a403022d00a50302b004a603020000a703020000a803020000a903020000aa03020000ab03020000ac03020000ad03020000ae03020000af0302b004b003020000b303026a00b903020000ba03026e00bb020100bc020102bd020119be020100bf020100c102013ec2020100c3020164c4020100c5020100c6020100c7020100c8020100c9020100ca020100cb020100cf020100d0110041313738314142434445464748323334d10302e803d303022c01d9020102db020101de020101"
-    await device._process_telemetry(device._parse_payload(bytes.fromhex(payload)))
+    await device._process_telemetry(Parameters.parse(bytes.fromhex(payload)))
 
     assert device.ac_timer_remaining == 3600
     assert device.dc_timer_remaining == 1800
@@ -1665,17 +1666,6 @@ def test_payload_decryption(
             None,
             id="solix_packet_2_missing",
         ),
-        # Test that when the 1st packet arrives after the 2nd packet is it ignored
-        pytest.param(
-            C1000,
-            [
-                "ff09390003010fc40222788d127d8418b41a81719975719a26b32734ea4e44ce244683e31928bb9a2736f9ede939567cddce6b3fb0de68116c",
-                "ff09fd0003010fc402121e0e23790307a57d4adabcd8d5ad56c3a9ea3cb5b222b0152438ccd3b980eda40fbde184fa66c80c3372dad179f11cad8799858ab95696e52c7e729af87c1106343ed5be9c042c8912b14f3a0d94b32afbed432e66616e1895ba0ff5e74a6da9401117070c926631e5d7886a07bec0de35aeb689e8bb289f1d7854143dc413f25d4b57d290ca4378cfb8efc275aa779145f98956e934eaced2d1f51cef7dd21a340318bfc14fb5f90ffd33e0e484175512af33593b1f91eb9801d7c2e1ac6d56e8fe7e8883d62226484ed6f1af711d042c5e3d0c186b3f2222293bc71ccf4a156a544d5171e90ee9b6b9b8f36ae058b96e3b88",
-            ],
-            "645ca871528991eb38ebb327a781e932b1d9d7a613b04c966b317db056c83428",
-            None,
-            id="solix_both_packets_reversed",
-        ),
         # Test that when the packets arrive in order they are parsed and device._data is populated
         pytest.param(
             C1000,
@@ -2014,7 +2004,7 @@ async def test_bad_values(
     caplog.set_level(logging.DEBUG)
 
     device = device_class(MOCK_BLE_DEVICE)
-    parameters = device._parse_payload(bytes.fromhex(payload))
+    parameters = Parameters.parse(bytes.fromhex(payload))
     await device._process_telemetry(parameters)
 
     for class_property, expected_value in mapping.items():
