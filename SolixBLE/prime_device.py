@@ -15,13 +15,11 @@ from cryptography.hazmat.primitives.asymmetric.ec import (
     derive_private_key,
 )
 
+from SolixBLE.const import NEGOTIATION_PATTERN
 from SolixBLE.constructs import Parameters
 from SolixBLE.device import SolixBLEDevice
 
 _LOGGER = logging.getLogger(__name__)
-
-#: The pattern used in negotiation packets from Anker Prime devices
-NEGOTIATION_PATTERN = "030001"
 
 #: The pattern used in telemetry packets from Anker Prime and Solix devices
 TELEMETRY_PATTERN = "03000f"

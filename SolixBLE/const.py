@@ -44,6 +44,9 @@ DEFAULT_METADATA_FLOAT = -1.0
 #: Bool value for unknown boolean attributes.
 DEFAULT_METADATA_BOOL = None
 
+#: The pattern used in negotiation packets from Anker devices
+NEGOTIATION_PATTERN = "030001"
+
 #: Command used to initiate negotiations
 NEGOTIATION_COMMAND_0 = "ff0936000300010001a10442ad8c69a22462326463306231372d623735642d346162662d626136652d656337633939376332336537b9"
 
