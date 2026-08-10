@@ -409,7 +409,12 @@ class SolixBLEDevice:
         )
 
     def _decrypt_payload(self, payload: bytes) -> bytes:
-        """Decrypt telemetry packet using negotiated shared secret and IV."""
+        """Decrypt payload using negotiated shared secret and IV if available."""
+
+        if self._shared_secret is None:
+            _LOGGER.debug("Skipping decryption as key not negotiated...")
+            return payload
+
         cipher = AES.new(
             self._shared_secret[:16], AES.MODE_CBC, iv=self._shared_secret[16:],
         )
