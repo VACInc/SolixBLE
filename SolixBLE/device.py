@@ -411,7 +411,7 @@ class SolixBLEDevice:
     def _decrypt_payload(self, payload: bytes) -> bytes:
         """Decrypt telemetry packet using negotiated shared secret and IV."""
         cipher = AES.new(
-            self._shared_secret[:16], AES.MODE_CBC, iv=self._shared_secret[16:]
+            self._shared_secret[:16], AES.MODE_CBC, iv=self._shared_secret[16:],
         )
         decrypted = cipher.decrypt(payload)
         unpadder = PKCS7(128).unpadder()
@@ -419,7 +419,11 @@ class SolixBLEDevice:
         return unpadded_data + unpadder.finalize()
 
     def _encrypt_payload(self, payload: bytes) -> bytes:
-        """Encrypt telemetry packet using negotiated shared secret and IV."""
+        """Encrypt payload using negotiated shared secret if available."""
+
+        if self._shared_secret is None:
+            _LOGGER.debug("Skipping encryption as key not negotiated...")
+            return payload
 
         # Pad and encrypt payload
         padder = PKCS7(128).padder()
