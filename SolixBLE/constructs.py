@@ -217,7 +217,7 @@ class ParameterDict(dict):
     def to_legacy(self) -> dict[str, bytes]:
         """Return legacy format of paramaters."""
         return {k:
-            (v.type.to_bytes(1) if v and v.type else b"") +
+            (v.type.to_bytes(1) if v is not None and v.type is not None else b"") +
             (v.value or b"")
         for k, v in self.items()}
 
