@@ -7,6 +7,7 @@ import pytest
 
 from SolixBLE.devices.f2600 import F2600
 from SolixBLE.states import DisplayTimeout, LightStatus
+from tests.const import NEGOTIATION_RESPONSES_SOLIX
 
 ########################
 # Test device commands #
@@ -251,5 +252,200 @@ F2600_TEST_COMMANDS_RESPONSES = [
         [("03010f", "c840", None)],
         TimeoutError,
         id="f2600_status_update_error",
+    ),
+]
+
+
+############################
+# Test device commands E2E #
+############################
+
+# These tests end-to-end tests check that the correct bytes are sent
+# by the command. See test_send_command_e2e() in test_commands.py.
+
+F2600_TEST_COMMANDS_E2E = [
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "turn_ac_on",
+        [],
+        "ff091a0003000f404acf1b676bb8c648a6f066b90d0c2025028b",
+        id="f2600_ac_on",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "turn_ac_off",
+        [],
+        "ff091a0003000f404aa665f0bcc4f9a3a154d50bb71d7c300e38",
+        id="f2600_ac_off",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "turn_dc_on",
+        [],
+        "ff091a0003000f404bcf1b676bb8c648a6f066b90d0c2025028a",
+        id="f2600_dc_on",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "turn_dc_off",
+        [],
+        "ff091a0003000f404ba665f0bcc4f9a3a154d50bb71d7c300e39",
+        id="f2600_dc_off",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_ac_timer",
+        [300],
+        "ff092a0003000f4042396047ce2148c486a0a797e65b37d310fc0ba06f11c351de824b814dfe516aaaff",
+        id="f2600_ac_timer_5m",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_dc_timer",
+        [300],
+        "ff092a0003000f4043396047ce2148c486a0a797e65b37d310fc0ba06f11c351de824b814dfe516aaafe",
+        id="f2600_dc_timer_5m",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_ac_timer",
+        [10],
+        "ff092a0003000f40424e9bd8a15edbf3bf768a607175daf29210060037a24c580ab066d23e0cdaa73e7d",
+        id="f2600_ac_timer_10s",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_dc_timer",
+        [10],
+        "ff092a0003000f40434e9bd8a15edbf3bf768a607175daf29210060037a24c580ab066d23e0cdaa73e7c",
+        id="f2600_dc_timer_10s",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_light_mode",
+        [LightStatus.LOW],
+        "ff091a0003000f404fcf1b676bb8c648a6f066b90d0c2025028e",
+        id="f2600_light_low",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_light_mode",
+        [LightStatus.MEDIUM],
+        "ff091a0003000f404f78e6e204ae7a3858b1aac611fd4bdec146",
+        id="f2600_light_med",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_light_mode",
+        [LightStatus.HIGH],
+        "ff091a0003000f404f3fa145b4757507f18b3503e0cc3bcae3f5",
+        id="f2600_light_high",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_light_mode",
+        [LightStatus.SOS],
+        "ff091a0003000f404f2c28e49e5cd5ed57b9749702b802f3fb48",
+        id="f2600_light_sos",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_display_mode",
+        [LightStatus.LOW],
+        "ff091a0003000f404ccf1b676bb8c648a6f066b90d0c2025028d",
+        id="f2600_display_low",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_display_mode",
+        [LightStatus.MEDIUM],
+        "ff091a0003000f404c78e6e204ae7a3858b1aac611fd4bdec145",
+        id="f2600_display_med",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_display_mode",
+        [LightStatus.HIGH],
+        "ff091a0003000f404c3fa145b4757507f18b3503e0cc3bcae3f6",
+        id="f2600_display_high",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_display_timeout",
+        [DisplayTimeout.S20],
+        "ff091a0003000f4046def18b6e3fa7434937ef01fecb95dfd3cb",
+        id="f2600_display_timeout_20s",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_display_timeout",
+        [DisplayTimeout.S1800],
+        "ff091a0003000f404665b9a755e0b46d3947a6937b5f7be4d2d3",
+        id="f2600_display_timeout_30m",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "turn_display_on",
+        [],
+        "ff091a0003000f4052cf1b676bb8c648a6f066b90d0c20250293",
+        id="f2600_display_on",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "turn_display_off",
+        [],
+        "ff091a0003000f4052a665f0bcc4f9a3a154d50bb71d7c300e20",
+        id="f2600_display_off",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "turn_power_saving_mode_on",
+        [],
+        "ff091a0003000f404ecf1b676bb8c648a6f066b90d0c2025028f",
+        id="f2600_power_saving_on",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "turn_power_saving_mode_off",
+        [],
+        "ff091a0003000f404ea665f0bcc4f9a3a154d50bb71d7c300e3c",
+        id="f2600_power_saving_off",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_ac_charging_power",
+        [150],
+        "ff091a0003000f40449f3e0c5587a55142942d2896d550e9f3b5",
+        id="f2600_ac_charge_150w",
+    ),
+    pytest.param(
+        F2600,
+        NEGOTIATION_RESPONSES_SOLIX,
+        "set_ac_charging_power",
+        [700],
+        "ff091a0003000f4044145d777bfee71fbe496c9c7e8611c320aa",
+        id="f2600_ac_charge_700w",
     ),
 ]

@@ -4,6 +4,7 @@
 
 """
 
+import asyncio
 from contextlib import nullcontext
 from unittest import mock
 
@@ -12,15 +13,38 @@ import pytest
 from SolixBLE.device import SolixBLEDevice
 from SolixBLE.prime_device import PrimeDevice
 from tests.const import MOCK_BLE_DEVICE
-from tests.devices.c300 import C300_TEST_COMMANDS, C300_TEST_COMMANDS_RESPONSES
-from tests.devices.c300dc import C300DC_TEST_COMMANDS
-from tests.devices.c800 import C800_TEST_COMMANDS, C800_TEST_COMMANDS_RESPONSES
-from tests.devices.c1000 import C1000_TEST_COMMANDS, C1000_TEST_COMMANDS_RESPONSES
-from tests.devices.c1000g2 import C1000G2_TEST_COMMANDS
-from tests.devices.f2600 import F2600_TEST_COMMANDS, F2600_TEST_COMMANDS_RESPONSES
-from tests.devices.f3800 import F3800_TEST_COMMANDS
-from tests.devices.prime_160w_charger import PRIME_CHARGER_160W_TEST_COMMANDS
-from tests.devices.prime_250w_charger import PRIME_CHARGER_250W_TEST_COMMANDS
+from tests.devices.c300 import (
+    C300_TEST_COMMANDS,
+    C300_TEST_COMMANDS_E2E,
+    C300_TEST_COMMANDS_RESPONSES,
+)
+from tests.devices.c300dc import C300DC_TEST_COMMANDS, C300DC_TEST_COMMANDS_E2E
+from tests.devices.c800 import (
+    C800_TEST_COMMANDS,
+    C800_TEST_COMMANDS_E2E,
+    C800_TEST_COMMANDS_RESPONSES,
+)
+from tests.devices.c1000 import (
+    C1000_TEST_COMMANDS,
+    C1000_TEST_COMMANDS_E2E,
+    C1000_TEST_COMMANDS_RESPONSES,
+)
+from tests.devices.c1000g2 import C1000G2_TEST_COMMANDS, C1000G2_TEST_COMMANDS_E2E
+from tests.devices.f2600 import (
+    F2600_TEST_COMMANDS,
+    F2600_TEST_COMMANDS_E2E,
+    F2600_TEST_COMMANDS_RESPONSES,
+)
+from tests.devices.f3800 import F3800_TEST_COMMANDS, F3800_TEST_COMMANDS_E2E
+from tests.devices.prime_160w_charger import (
+    PRIME_CHARGER_160W_TEST_COMMANDS,
+    PRIME_CHARGER_160W_TEST_COMMANDS_E2E,
+)
+from tests.devices.prime_250w_charger import (
+    PRIME_CHARGER_250W_TEST_COMMANDS,
+    PRIME_CHARGER_250W_TEST_COMMANDS_E2E,
+)
+from tests.helpers import MockDevice
 
 
 @pytest.mark.asyncio
@@ -137,3 +161,67 @@ async def test_send_command_response(  # noqa: PLR0913, PLR0917
                 bytes.fromhex(call[0]),
                 bytes.fromhex(call[1]),
             )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("device_class", "negotiation", "function", "arguments", "expected"),
+    [
+        *C300_TEST_COMMANDS_E2E,
+        *C300DC_TEST_COMMANDS_E2E,
+        *C800_TEST_COMMANDS_E2E,
+        *C1000_TEST_COMMANDS_E2E,
+        *C1000G2_TEST_COMMANDS_E2E,
+        *F2600_TEST_COMMANDS_E2E,
+        *F3800_TEST_COMMANDS_E2E,
+        *PRIME_CHARGER_160W_TEST_COMMANDS_E2E,
+        *PRIME_CHARGER_250W_TEST_COMMANDS_E2E,
+    ],
+)
+async def test_send_command_e2e(  # noqa: PLR0913, PLR0917
+    fast_sleep,  # noqa: ANN001, ARG001
+    fast_timeouts,  # noqa: ANN001, ARG001
+    device_class: type[SolixBLEDevice],
+    negotiation: dict,
+    function: str,
+    arguments: list,
+    expected: str,
+) -> None:
+    """
+    Test that the expected command is sent to the mock device.
+
+    :param device_class: Class of device under test.
+    :param negotiation: Negotiation requests and responses.
+    :param function: Function to be called.
+    :param arguments: Arguments to be given to function.
+    :param expected: Expected bytes sent to the device.
+    """
+
+    async def _keep_alive(*args: list, **kwargs: dict) -> None:  # noqa: ARG001
+        return None
+
+    async with MockDevice() as mock_bluetooth:
+
+        device = device_class(MOCK_BLE_DEVICE)
+        device._keep_alive = _keep_alive  # noqa: SLF001
+
+        # We first expect a negotiation
+        for k, v in negotiation.items():
+            mock_bluetooth.expect_ordered(
+                bytes.fromhex(k),
+                [bytes.fromhex(x) for x in v],
+            )
+
+        # We expect the negotiations to succeed
+        assert await device.connect(), "Expected connect to return True"
+        await asyncio.sleep(0.5)
+        assert device.connected, "Expected connected to be True"
+        assert device.negotiated, "Expected connected to be True"
+        mock_bluetooth.check_assertions()
+
+        mock_bluetooth.expect_ordered(bytes.fromhex(expected))
+
+        fn = getattr(device, function)
+        await fn(*arguments)
+
+        mock_bluetooth.check_assertions()
