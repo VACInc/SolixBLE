@@ -74,9 +74,11 @@ NEGOTIATION_RESPONSES_SOLIX: dict[str, list[str]] = {
     const.NEGOTIATION_COMMAND_4: [
         "ff094d00030001082100a140b2ade5cac4f4a0c1307e44a0e9c5363cb21e4c8485ee324c23be949fa5d5929a75e57da3207c948a0c366ca9ea1ab2cb8e57d2d046a6ebefe5d96adb5d4cb35039"
     ],
-    const.NEGOTIATION_COMMAND_5: [],
+    # The command sent to the device in response to entering stage 5
+    # is encrypted using the shared secret
+    "ff095a0003000140221600b05efcf9e43da8a96b64e4552d475ea142eda26512e5176c09f1acd2c39812ff3306cfceea4aaa03aac91977674a22f3c452ad5aa61acc1022ba4c8391f584f734d72c0325c44e04de0e9f439dc1ac": [],
 }
 """
-This maps the expected commands sent by the library to what my Anker Solix C300
+This maps the expected commands sent by the library to what my Anker Solix C1000(X)
 sends in response. Its used to emulate it for testing negotiations.
 """

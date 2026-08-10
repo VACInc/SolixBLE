@@ -33,12 +33,7 @@ from .const import (
     DEFAULT_METADATA_INT,
     DEFAULT_METADATA_STRING,
     DISCONNECT_TIMEOUT,
-    NEGOTIATION_COMMAND_0,
-    NEGOTIATION_COMMAND_1,
-    NEGOTIATION_COMMAND_2,
-    NEGOTIATION_COMMAND_3,
-    NEGOTIATION_COMMAND_4,
-    NEGOTIATION_COMMAND_5,
+    NEGOTIATION_PATTERN,
     NEGOTIATION_RESPONSE_TIMEOUT,
     NEGOTIATION_TIMEOUT,
     PRIVATE_KEY,
@@ -105,10 +100,18 @@ class SolixBLEDevice:
 
     async def _initiate_negotiations(self) -> None:
         """Send the negotiation initiation command."""
-        await self._client.write_gatt_char(
-            UUID_COMMAND,
-            bytes.fromhex(NEGOTIATION_COMMAND_0),
-            response=True,
+        await self._send_packet(pattern=NEGOTIATION_PATTERN, cmd="0001",
+            parameters={
+                "a1": {
+                    "key": bytes.fromhex("a1"),
+                    "type": None,
+                    "value": bytes.fromhex("42ad8c69"),
+                }, "a2": {
+                    "key": bytes.fromhex("a2"),
+                    "type": None,
+                    "value": bytes.fromhex("62326463306231372d623735642d346162662d626136652d656337633939376332336537"),
+                },
+            },
         )
 
     async def connect(self, max_attempts: int = 3, run_callbacks: bool = True) -> bool:
@@ -590,8 +593,8 @@ class SolixBLEDevice:
                     elif cmd.hex() in self._TELEMETRY_COMMANDS:
                         _LOGGER.debug("Received encrypted telemetry message!")
                         decrypted_payload = self._decrypt_payload(payload)
+                        _LOGGER.debug(f"Plain-text payload: {decrypted_payload.hex()}")
                         parameters = Parameters.parse(decrypted_payload)
-                        _LOGGER.debug(f"WE GOT: {parameters}")
                         return await self._process_telemetry(parameters)
 
                     # Unknown messages
@@ -630,6 +633,13 @@ class SolixBLEDevice:
     async def _process_negotiation(self, cmd: bytes, payload: bytes) -> None:
         """Negotiate encryption with the device."""
 
+        plain_text_payload = self._decrypt_payload(payload)
+        _LOGGER.debug(f"Plain-text payload: {plain_text_payload.hex()}")
+        parameters = Parameters.parse(plain_text_payload).to_legacy()
+        _LOGGER.debug(
+            f"Parameters: {self._parameters_to_str(parameters, types=True)}",
+        )
+
         match cmd.hex():
 
             # There is a "stage 0" in which we automatically send a negotiation
@@ -640,80 +650,148 @@ class SolixBLEDevice:
             # Negotiation stage 1
             case "0801":
                 _LOGGER.debug(
-                    "Entered negotiation stage 1 due to response from device!"
+                    "Entered negotiation stage 1 due to response from device!",
                 )
-                parameters = Parameters.parse(payload)
-                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
                 _LOGGER.debug("Sending stage 1 response message...")
-                return await self._client.write_gatt_char(
-                    UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_1)
+                await self._send_packet(pattern=NEGOTIATION_PATTERN, cmd="0003",
+                    parameters={
+                        "a1": {
+                            "key": bytes.fromhex("a1"),
+                            "type": None,
+                            "value": bytes.fromhex("42ad8c69"),
+                        }, "a2": {
+                            "key": bytes.fromhex("a2"),
+                            "type": None,
+                            "value": bytes.fromhex("62326463306231372d623735642d346162662d626136652d656337633939376332336537"),
+                        }, "a3": {
+                            "key": bytes.fromhex("a3"),
+                            "type": None,
+                            "value": bytes.fromhex("20"),
+                        }, "a4": {
+                            "key": bytes.fromhex("a4"),
+                            "type": None,
+                            "value": bytes.fromhex("00f0"),
+                        },
+                    },
                 )
 
             # Negotiation stage 2
             case "0803":
                 _LOGGER.debug(
-                    "Entered negotiation stage 2 due to response from device!"
+                    "Entered negotiation stage 2 due to response from device!",
                 )
-                parameters = Parameters.parse(payload)
-                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
                 _LOGGER.debug("Sending stage 2 response message...")
-                return await self._client.write_gatt_char(
-                    UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_2)
+                await self._send_packet(pattern=NEGOTIATION_PATTERN, cmd="0029",
+                    parameters={
+                        "a1": {
+                            "key": bytes.fromhex("a1"),
+                            "type": None,
+                            "value": bytes.fromhex("42ad8c69"),
+                        }, "a2": {
+                            "key": bytes.fromhex("a2"),
+                            "type": None,
+                            "value": bytes.fromhex("62326463306231372d623735642d346162662d626136652d656337633939376332336537"),
+                        },
+                    },
                 )
 
             # Negotiation stage 3
             case "0829":
                 _LOGGER.debug(
-                    "Entered negotiation stage 3 due to response from device!"
+                    "Entered negotiation stage 3 due to response from device!",
                 )
-                parameters = Parameters.parse(payload)
-                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
                 self._negotiation_timestamp = time.time()
                 _LOGGER.debug("Sending stage 3 response message...")
-                return await self._client.write_gatt_char(
-                    UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_3)
+                await self._send_packet(pattern=NEGOTIATION_PATTERN, cmd="0005",
+                    parameters={
+                        "a1": {
+                            "key": bytes.fromhex("a1"),
+                            "type": None,
+                            "value": bytes.fromhex("43ad8c69"),
+                        }, "a2": {
+                            "key": bytes.fromhex("a2"),
+                            "type": None,
+                            "value": bytes.fromhex("62326463306231372d623735642d346162662d626136652d656337633939376332336537"),
+                        }, "a3": {
+                            "key": bytes.fromhex("a3"),
+                            "type": None,
+                            "value": bytes.fromhex("20"),
+                        }, "a4": {
+                            "key": bytes.fromhex("a4"),
+                            "type": None,
+                            "value": bytes.fromhex("00f0"),
+                        }, "a5": {
+                            "key": bytes.fromhex("a5"),
+                            "type": None,
+                            "value": bytes.fromhex("40"),
+                        },
+                    },
                 )
 
             # Negotiation stage 4
             case "0805":
                 _LOGGER.debug(
-                    "Entered negotiation stage 4 due to response from device!"
+                    "Entered negotiation stage 4 due to response from device!",
                 )
-                parameters = Parameters.parse(payload)
-                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
                 _LOGGER.debug("Sending stage 4 response message...")
-                return await self._client.write_gatt_char(
-                    UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_4)
+                await self._send_packet(pattern=NEGOTIATION_PATTERN, cmd="0021",
+                    parameters={
+                        "a1": {
+                            "key": bytes.fromhex("a1"),
+                            "type": None,
+                            "value": bytes.fromhex("060ea168f232aedb37fb2d120c49180329ac72ab5ec3eb8fd30a2f252dc5e151dabccd9b1dc1e288704ca760a0d8c918e5c94823a1f609a4bf07fb4c33ee2190"),
+                        },
+                    },
                 )
 
             # Negotiation stage 5
             case "0821":
                 _LOGGER.debug(
-                    "Entered negotiation stage 5 due to response from device!"
+                    "Entered negotiation stage 5 due to response from device!",
                 )
-                parameters = Parameters.parse(payload)
-                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
 
                 # Extract public key of device from payload
-                device_public_key_bytes = bytes.fromhex("04") + parameters["a1"].type.to_bytes(1) + parameters["a1"].value
+                device_public_key_bytes = bytes.fromhex("04") + parameters["a1"]
                 _LOGGER.debug(f"Public key of device: {device_public_key_bytes.hex()}")
                 device_public_key = EllipticCurvePublicKey.from_encoded_point(
-                    SECP256R1(), device_public_key_bytes
+                    SECP256R1(), device_public_key_bytes,
                 )
 
                 # Calculate the shared secret
                 # The first half of the shared secret is the encryption key
                 # and the second half is the IV
                 private_value = int.from_bytes(
-                    bytes.fromhex(PRIVATE_KEY), byteorder="big"
+                    bytes.fromhex(PRIVATE_KEY), byteorder="big",
                 )
                 private_key = derive_private_key(private_value, SECP256R1())
                 self._shared_secret = private_key.exchange(ECDH(), device_public_key)
                 _LOGGER.debug(f"Shared secret: {self._shared_secret.hex()}")
 
                 _LOGGER.debug("Sending stage 5 response message...")
-                return await self._client.write_gatt_char(
-                    UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_5)
+                await self._send_packet(pattern=NEGOTIATION_PATTERN, cmd="4022",
+                    parameters={
+                        "a1": {
+                            "key": bytes.fromhex("a1"),
+                            "type": None,
+                            "value": bytes.fromhex("43ad8c69"),
+                        }, "a2": {
+                            "key": bytes.fromhex("a2"),
+                            "type": None,
+                            "value": bytes.fromhex("62326463306231372d623735642d346162662d626136652d656337633939376332336537"),
+                        }, "a3": {
+                            "key": bytes.fromhex("a3"),
+                            "type": None,
+                            "value": bytes.fromhex("20"),
+                        }, "a4": {
+                            "key": bytes.fromhex("a4"),
+                            "type": None,
+                            "value": bytes.fromhex("00000000"),
+                        }, "a5": {
+                            "key": bytes.fromhex("a5"),
+                            "type": None,
+                            "value": bytes.fromhex("474d54304253542c4d332e352e302f312c4d31302e352e30"),
+                        },
+                    },
                 )
 
             # Negotiation stage 6 (Optional)
@@ -724,9 +802,6 @@ class SolixBLEDevice:
                 _LOGGER.debug(
                     "Entered negotiation stage 6 (optional) due to response from device!"
                 )
-                decrypted_payload = self._decrypt_payload(payload)
-                parameters = Parameters.parse(decrypted_payload)
-                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
 
             case _:
                 parameters = Parameters.parse(payload)
