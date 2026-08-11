@@ -1156,13 +1156,14 @@ async def test_f2600_timers() -> None:
         ),
     ],
 )
-async def test_negotiation(
-    fast_sleep,
-    fast_timeouts,
+async def test_negotiation(  # noqa: PLR0913
+    fake_time,  # noqa: ANN001, ARG001
+    fast_sleep,  # noqa: ANN001, ARG001
+    fast_timeouts,  # noqa: ANN001, ARG001
     device_class: type[SolixBLEDevice],
     packets: list[str],
     secret: str,
-):
+) -> None:
     """
     Test negotiation of the shared secret by mocking a device.
 
@@ -1433,15 +1434,18 @@ def test_payload_decryption(
         ),
     ],
 )
-async def test_telemetry_packet_processing(
-    fast_sleep,
-    fast_timeouts,
+async def test_telemetry_packet_processing(  # noqa: PLR0913, PLR0917
+    fake_time,  # noqa: ANN001, ARG001
+    fast_sleep,  # noqa: ANN001, ARG001
+    fast_timeouts,  # noqa: ANN001, ARG001
     device_class: type[SolixBLEDevice],
     packets: list[str],
     secret: str,
     parameters: str | None,
-):
+) -> None:
     """
+    Test that telemetry packets are processed.
+
     Test the _process_notification function when processing telemetry
     packets end to end.
 
@@ -1507,16 +1511,19 @@ async def test_telemetry_packet_processing(
         ),
     ],
 )
-async def test_generic_packet_processing(
-    caplog,
-    fast_sleep,
-    fast_timeouts,
+async def test_generic_packet_processing(  # noqa: PLR0913, PLR0917
+    caplog,  # noqa: ANN001
+    fake_time,  # noqa: ANN001, ARG001
+    fast_sleep,  # noqa: ANN001, ARG001
+    fast_timeouts,  # noqa: ANN001, ARG001
     device_class: type[SolixBLEDevice],
     packets: list[str],
     secret: str,
     expected_logs: list[str],
-):
+) -> None:
     """
+    Test the processing of arbitrary packets.
+
     Test the _process_notification function when processing arbitrary
     packets and check for expected log entries.
 

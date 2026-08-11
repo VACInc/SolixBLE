@@ -64,6 +64,7 @@ from tests.helpers import MockDevice
     ],
 )
 async def test_send_command(
+    fake_time,
     device_class: type[SolixBLEDevice],
     function: str,
     arguments: list,
@@ -81,12 +82,8 @@ async def test_send_command(
     device._negotiation_timestamp = time.time()
     device._client = mock.AsyncMock()
     device._encrypt_payload = lambda x: x
-
-    time_bytes = int(time.time()).to_bytes(length=4, byteorder="little").hex()
     with (
         mock.patch("SolixBLE.constructs.Packet.build") as mock_build,
-        mock.patch("SolixBLE.device.BASE_TIMESTAMP", new=time_bytes),
-        mock.patch("SolixBLE.prime_device.BASE_TIMESTAMP", new=time_bytes),
         mock.patch("SolixBLE.SolixBLEDevice.negotiated", return_value=True),
         pytest.raises(expected) if isinstance(expected, type) else nullcontext(),
     ):
@@ -96,9 +93,9 @@ async def test_send_command(
 
         # The send command function automatically adds a
         # timestamp to the parameters which we need to account for
-        timestamp_bytes = (f"fe04{time_bytes}"
+        timestamp_bytes = (f"fe04{device._timestamp().hex()}"
             if issubclass(device_class, PrimeDevice)
-            else f"fe0503{time_bytes}"
+            else f"fe0503{device._timestamp().hex()}"
         )
 
         for call in expected:
@@ -120,6 +117,7 @@ async def test_send_command(
     ],
 )
 async def test_send_command_response(  # noqa: PLR0913, PLR0917
+    fake_time,  # noqa: ANN001, ARG001
     device_class: type[SolixBLEDevice],
     function: str,
     arguments: list,
@@ -146,11 +144,8 @@ async def test_send_command_response(  # noqa: PLR0913, PLR0917
     device._client = mock.AsyncMock()
     device._encrypt_payload = lambda x: x
 
-    time_bytes = int(time.time()).to_bytes(length=4, byteorder="little").hex()
     with (
         mock.patch("SolixBLE.constructs.Packet.build") as mock_build,
-        mock.patch("SolixBLE.device.BASE_TIMESTAMP", new=time_bytes),
-        mock.patch("SolixBLE.prime_device.BASE_TIMESTAMP", new=time_bytes),
         mock.patch("SolixBLE.SolixBLEDevice.negotiated", return_value=True),
         mock.patch("SolixBLE.SolixBLEDevice._listen_for_packet") as mock_listen,
         pytest.raises(returned) if isinstance(returned, type) else nullcontext(),
@@ -163,9 +158,9 @@ async def test_send_command_response(  # noqa: PLR0913, PLR0917
 
         # The send command function automatically adds a
         # timestamp to the parameters which we need to account for
-        timestamp_bytes = (f"fe04{time_bytes}"
+        timestamp_bytes = (f"fe04{device._timestamp().hex()}"
             if issubclass(device_class, PrimeDevice)
-            else f"fe0503{time_bytes}"
+            else f"fe0503{device._timestamp().hex()}"
         )
 
         for call in expected:
@@ -198,6 +193,7 @@ async def test_send_command_response(  # noqa: PLR0913, PLR0917
     ],
 )
 async def test_send_command_e2e(  # noqa: PLR0913, PLR0917
+    fake_time,  # noqa: ANN001, ARG001
     fast_sleep,  # noqa: ANN001, ARG001
     fast_timeouts,  # noqa: ANN001, ARG001
     device_class: type[SolixBLEDevice],

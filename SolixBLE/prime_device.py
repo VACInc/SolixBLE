@@ -40,10 +40,6 @@ AAD = "3322110077665544bbaa9988ffeeddcc"
 #: talking over Bluetooth with a range of like 10m... I don't care.
 PRIVATE_KEY = "754744d72984c378bc4fa77d7fcdf6bbb6d9df119fa9be4948eb8a3b4cd6071f"
 
-#: The unix timestamp that is agreed upon in the negotiations. This is used
-#: by Anker to protect against replay attacks as commands must contain the
-#: current encrypted time.
-BASE_TIMESTAMP = "ef79b569"
 
 
 class PrimeDevice(SolixBLEDevice):
@@ -129,7 +125,7 @@ class PrimeDevice(SolixBLEDevice):
             parameters={ "a1": {
                 "key": bytes.fromhex("a1"),
                 "type": None,
-                "value": bytes.fromhex("ef79b569"),
+                "value": lambda self: self._timestamp(),
             }},
         )
 
@@ -162,7 +158,7 @@ class PrimeDevice(SolixBLEDevice):
                         "a1": {
                             "key": bytes.fromhex("a1"),
                             "type": None,
-                            "value": bytes.fromhex("ef79b569"),
+                            "value": lambda self: self._timestamp(),
                         }, "a3": {
                             "key": bytes.fromhex("a3"),
                             "type": None,
@@ -184,7 +180,7 @@ class PrimeDevice(SolixBLEDevice):
                     parameters={ "a1": {
                         "key": bytes.fromhex("a1"),
                         "type": None,
-                        "value": bytes.fromhex("ef79b569"),
+                        "value": lambda self: self._timestamp(),
                     }},
                 )
 
@@ -198,7 +194,7 @@ class PrimeDevice(SolixBLEDevice):
                         "a1": {
                             "key": bytes.fromhex("a1"),
                             "type": None,
-                            "value": bytes.fromhex("ef79b569"),
+                            "value": lambda self: self._timestamp(),
                         }, "a3": {
                             "key": bytes.fromhex("a3"),
                             "type": None,
@@ -263,7 +259,7 @@ class PrimeDevice(SolixBLEDevice):
                         "a1": {
                             "key": bytes.fromhex("a1"),
                             "type": None,
-                            "value": bytes.fromhex("f079b569"),
+                            "value": lambda self: self._timestamp(),
                         }, "a3": {
                             "key": bytes.fromhex("a3"),
                             "type": None,
@@ -288,7 +284,7 @@ class PrimeDevice(SolixBLEDevice):
                         "a1": {
                             "key": bytes.fromhex("a1"),
                             "type": None,
-                            "value": bytes.fromhex("f079b569"),
+                            "value": lambda self: self._timestamp(),
                         }, "a2": {
                             "key": bytes.fromhex("a2"),
                             "type": None,
@@ -311,7 +307,7 @@ class PrimeDevice(SolixBLEDevice):
                         }, "fe": {
                             "key": bytes.fromhex("fe"),
                             "type": None,
-                            "value": bytes.fromhex("f079b569"),
+                            "value": lambda self: self._timestamp(),
                         },
                     },
                 )
@@ -336,7 +332,7 @@ class PrimeDevice(SolixBLEDevice):
                         }, "fe": {
                             "key": bytes.fromhex("fe"),
                             "type": None,
-                            "value": bytes.fromhex("f079b569"),
+                            "value": lambda self: self._timestamp(),
                         },
                     },
                 )
@@ -363,22 +359,13 @@ class PrimeDevice(SolixBLEDevice):
         if not self.negotiated:
             raise ConnectionError("Not connected to device")
 
-        # Commands include a timestamp in the payload to prevent replay attacks
-        # and that timestamp is set during negotiations
-        time_passed = int(time.time() - self._negotiation_timestamp)
-        base_timestamp = int.from_bytes(
-            bytes.fromhex(BASE_TIMESTAMP), byteorder="little",
-        )
-        new_timestamp = (base_timestamp + time_passed).to_bytes(
-            length=4, byteorder="little",
-        )
         await self._send_packet(
             pattern="03000f",
             cmd=cmd,
             parameters=parameters | { "fe": {
                 "key": bytes.fromhex("fe"),
                 "type": None,
-                "value": new_timestamp,
+                "value": lambda self: self._timestamp(),
             }},
             **kwargs,
         )

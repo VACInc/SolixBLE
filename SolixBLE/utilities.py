@@ -59,7 +59,7 @@ def _filter_kwargs(function: Callable, args: dict) -> dict:
     signature = inspect.signature(function)
     return {
         k: v for k, v in args.items()
-        if k in signature.parameters
+        if k in signature.parameters and k != "self"
     }
 
 def _to_bytes(data: bytes | str | int | Callable | None, **kwargs: dict) -> bytes:

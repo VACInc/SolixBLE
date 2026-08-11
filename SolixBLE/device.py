@@ -31,7 +31,6 @@ from SolixBLE.constructs import FragmentedPayload, Packet, ParameterDict, Parame
 from SolixBLE.utilities import _to_bytes
 
 from .const import (
-    BASE_TIMESTAMP,
     DEFAULT_METADATA_INT,
     DEFAULT_METADATA_STRING,
     DISCONNECT_TIMEOUT,
@@ -107,7 +106,7 @@ class SolixBLEDevice:
                 "a1": {
                     "key": bytes.fromhex("a1"),
                     "type": None,
-                    "value": bytes.fromhex("42ad8c69"),
+                    "value": lambda self: self._timestamp(),
                 }, "a2": {
                     "key": bytes.fromhex("a2"),
                     "type": None,
@@ -626,7 +625,7 @@ class SolixBLEDevice:
         for key, item in parameters.items():
             item["key"] = bytes.fromhex(key)
             item["type"] = item.get("type", None)
-            item["value"] = _to_bytes(data=item["value"], **kwargs)
+            item["value"] = _to_bytes(data=item["value"], **kwargs | { "self": self })
         _LOGGER.debug(f"Generated payload parameters: {parameters}")
 
         payload = Parameters.build(parameters)
@@ -672,7 +671,7 @@ class SolixBLEDevice:
                         "a1": {
                             "key": bytes.fromhex("a1"),
                             "type": None,
-                            "value": bytes.fromhex("42ad8c69"),
+                            "value": lambda self: self._timestamp(),
                         }, "a2": {
                             "key": bytes.fromhex("a2"),
                             "type": None,
@@ -700,7 +699,7 @@ class SolixBLEDevice:
                         "a1": {
                             "key": bytes.fromhex("a1"),
                             "type": None,
-                            "value": bytes.fromhex("42ad8c69"),
+                            "value": lambda self: self._timestamp(),
                         }, "a2": {
                             "key": bytes.fromhex("a2"),
                             "type": None,
@@ -721,7 +720,7 @@ class SolixBLEDevice:
                         "a1": {
                             "key": bytes.fromhex("a1"),
                             "type": None,
-                            "value": bytes.fromhex("43ad8c69"),
+                            "value": lambda self: self._timestamp(),
                         }, "a2": {
                             "key": bytes.fromhex("a2"),
                             "type": None,
@@ -787,7 +786,7 @@ class SolixBLEDevice:
                         "a1": {
                             "key": bytes.fromhex("a1"),
                             "type": None,
-                            "value": bytes.fromhex("43ad8c69"),
+                            "value": lambda self: self._timestamp(),
                         }, "a2": {
                             "key": bytes.fromhex("a2"),
                             "type": None,
@@ -823,6 +822,10 @@ class SolixBLEDevice:
                     f"Received unexpected negotiation request response from device! cmd: '{cmd}', parameters: '{self._parameters_to_str(parameters)}'"
                 )
 
+    def _timestamp(self) -> bytes:
+        """Unix timestamp in byte form (4B)."""
+        return int(time.time()).to_bytes(length=4, byteorder="little", signed=False)
+
     async def _send_command(self, cmd: str, parameters: dict, **kwargs: dict) -> None:
         """Send a command to the device.
 
@@ -837,22 +840,13 @@ class SolixBLEDevice:
         if not self.negotiated:
             raise ConnectionError("Not connected to device")
 
-        # Commands include a timestamp in the payload to prevent replay attacks
-        # and that timestamp is set during negotiations
-        time_passed = int(time.time() - self._negotiation_timestamp)
-        base_timestamp = int.from_bytes(
-            bytes.fromhex(BASE_TIMESTAMP), byteorder="little",
-        )
-        new_timestamp = (base_timestamp + time_passed).to_bytes(
-            length=4, byteorder="little",
-        )
         await self._send_packet(
             pattern="03000f",
             cmd=cmd,
             parameters=parameters | { "fe": {
                 "key": bytes.fromhex("fe"),
                 "type": 3,
-                "value": new_timestamp,
+                "value": lambda self: self._timestamp(),
             }},
             **kwargs,
         )

@@ -47,14 +47,14 @@ NEGOTIATION_RESPONSES_PRIME: dict[str, list[str]] = {
     # secret for encryption which is different from device to device due to different
     # public keys. This is why constants are not used. But we can use constants for
     # the earlier packets which use static keys.
-    "ff094000030001402257ec69586f3500c8f858e0ba047f237f4e2ed8c50d2f39ba3587e4010275bea22242936f08788849272fb3f4cf7493be4a60bb9c9f0693": [
+    "ff094000030001402257ec76586f3500c8f858e0ba047f237f4e2ed8c50d2f39ba3587e4010275bea22242936f08784271e19d67a6275ff6bb50577acec0a068": [
         "ff091b000300014822f60b45600839b2c171b33dc5790ed64ae32d"
     ],
-    "ff094600030001402757ec69586f3501e8cf6185d8c4035707377af9af3a2e40b02b86e7531974f1c22440de6e43705566b77cf940e235b65abf4d413ece5f2c3781712f3742": [
+    "ff094600030001402757ec76586f3501e8cf6185d8c4035707377af9af3a2e40b02b86e7531974f1c22440de6e43705566b77cf940280d70e86b1fa915ab5a360040237091b9": [
         "ff091b000300014827f60b45600839b2c171b33dc5790ed64ae328"
     ],
-    "ff09230003000f420057e9b8dfdeacda7991d3eb7f12093e55ff002aa9799bcc9216e3": [],
-    "ff09530003000f420a57e9b883d958e48e5b7de48d980206577e2dafbb3d604dea3686f3011969f0db2311906d142b5730ee2bfb11e3fbbe7485aac8877995310669156ec74645c962b419e579b385fd079967": [],
+    "ff09230003000f420057e9b8dfdeb3da799151684e584bb99eaaccfac9baf7cbcfa6e4": [],
+    "ff09530003000f420a57e9b883d958e48e5b7de48d980206577e2dafbb3d604dea3686f3011969f0db2311906d142b5730ee2bfb11e3fbbe7485aac887798a31066997edf60c074ea9e1d5351970e9fa5a2960": [],
 }
 """
 This maps the expected commands sent by the library to what my Anker Prime 160w
@@ -76,7 +76,7 @@ NEGOTIATION_RESPONSES_SOLIX: dict[str, list[str]] = {
     ],
     # The command sent to the device in response to entering stage 5
     # is encrypted using the shared secret
-    "ff095a0003000140221600b05efcf9e43da8a96b64e4552d475ea142eda26512e5176c09f1acd2c39812ff3306cfceea4aaa03aac91977674a22f3c452ad5aa61acc1022ba4c8391f584f734d72c0325c44e04de0e9f439dc1ac": [],
+    "ff095a00030001402222c97d5c5bf02e0b43c62c864817cd38b9fd152113728513cc88bc4a1b4de3062473fcd5819618c4b926694d2732c337095a18974243127aa5e266f76f9ac7de06ba357763abe88aaef98f8c7a5e48a324": [],
 }
 """
 This maps the expected commands sent by the library to what my Anker Solix C1000(X)
