@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import time
 from contextlib import nullcontext
 from unittest import mock
 
@@ -51,15 +52,15 @@ from tests.helpers import MockDevice
 @pytest.mark.parametrize(
     ("device_class", "function", "arguments", "expected"),
     [
-        # *C300_TEST_COMMANDS,
-        # *C300DC_TEST_COMMANDS,
-        # *C800_TEST_COMMANDS,
-        # *C1000_TEST_COMMANDS,
-        # *C1000G2_TEST_COMMANDS,
-        # *F2600_TEST_COMMANDS,
-        # *F3800_TEST_COMMANDS,
-        # *PRIME_CHARGER_160W_TEST_COMMANDS,
-        # *PRIME_CHARGER_250W_TEST_COMMANDS,
+        *C300_TEST_COMMANDS,
+        *C300DC_TEST_COMMANDS,
+        *C800_TEST_COMMANDS,
+        *C1000_TEST_COMMANDS,
+        *C1000G2_TEST_COMMANDS,
+        *F2600_TEST_COMMANDS,
+        *F3800_TEST_COMMANDS,
+        *PRIME_CHARGER_160W_TEST_COMMANDS,
+        *PRIME_CHARGER_250W_TEST_COMMANDS,
     ],
 )
 async def test_send_command(
@@ -69,44 +70,53 @@ async def test_send_command(
     expected: Exception | list[(str, str)],
 ) -> None:
     """
-    Test that the expected command is sent to the mock device.
+    Test that the correct build command is executed for a command or an error is raised.
 
     :param device_class: Class of device under test.
     :param function: Function to be called.
     :param arguments: Arguments to be given to function.
-    :param expected: Error or expected cmd and payload calls to _send_command.
+    :param expected: Error or expected cmd and payload output.
     """
-
-    mock_function_name = (
-        "SolixBLE.PrimeDevice._send_command" if
-        issubclass(device_class, PrimeDevice) else
-        "SolixBLE.SolixBLEDevice._send_command"
-    )
-
     device = device_class(MOCK_BLE_DEVICE)
+    device._negotiation_timestamp = time.time()
+    device._client = mock.AsyncMock()
+    device._encrypt_payload = lambda x: x
+
+    time_bytes = int(time.time()).to_bytes(length=4, byteorder="little").hex()
     with (
-        mock.patch(mock_function_name) as mocked,
+        mock.patch("SolixBLE.constructs.Packet.build") as mock_build,
+        mock.patch("SolixBLE.device.BASE_TIMESTAMP", new=time_bytes),
+        mock.patch("SolixBLE.prime_device.BASE_TIMESTAMP", new=time_bytes),
+        mock.patch("SolixBLE.SolixBLEDevice.negotiated", return_value=True),
         pytest.raises(expected) if isinstance(expected, type) else nullcontext(),
     ):
 
         fn = getattr(device, function)
         await fn(*arguments)
 
+        # The send command function automatically adds a
+        # timestamp to the parameters which we need to account for
+        timestamp_bytes = (f"fe04{time_bytes}"
+            if issubclass(device_class, PrimeDevice)
+            else f"fe0503{time_bytes}"
+        )
+
         for call in expected:
-            mocked.assert_called_once_with(
-                cmd=bytes.fromhex(call[0]),
-                payload=bytes.fromhex(call[1]),
-            )
+            mock_build.assert_called_once_with({
+                "pattern": bytes.fromhex("03000f"),
+                "cmd": bytes.fromhex(call[0]),
+                "payload_bytes": bytes.fromhex(call[1] + timestamp_bytes),
+            })
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("device_class", "function", "arguments", "expected", "listen", "returned"),
     [
-        # *C300_TEST_COMMANDS_RESPONSES,
-        # *C800_TEST_COMMANDS_RESPONSES,
-        # *C1000_TEST_COMMANDS_RESPONSES,
-        # *F2600_TEST_COMMANDS_RESPONSES,
+        *C300_TEST_COMMANDS_RESPONSES,
+        *C800_TEST_COMMANDS_RESPONSES,
+        *C1000_TEST_COMMANDS_RESPONSES,
+        *F2600_TEST_COMMANDS_RESPONSES,
     ],
 )
 async def test_send_command_response(  # noqa: PLR0913, PLR0917
@@ -131,16 +141,17 @@ async def test_send_command_response(  # noqa: PLR0913, PLR0917
     :param listen: Result(s) of calling _listen_for_packet(pattern, cmd).
     :param returned: Expected return value of the function.
     """
-
-    mock_function_name = (
-        "SolixBLE.PrimeDevice._send_command" if
-        issubclass(device_class, PrimeDevice) else
-        "SolixBLE.SolixBLEDevice._send_command"
-    )
-
     device = device_class(MOCK_BLE_DEVICE)
+    device._negotiation_timestamp = time.time()
+    device._client = mock.AsyncMock()
+    device._encrypt_payload = lambda x: x
+
+    time_bytes = int(time.time()).to_bytes(length=4, byteorder="little").hex()
     with (
-        mock.patch(mock_function_name) as mock_send,
+        mock.patch("SolixBLE.constructs.Packet.build") as mock_build,
+        mock.patch("SolixBLE.device.BASE_TIMESTAMP", new=time_bytes),
+        mock.patch("SolixBLE.prime_device.BASE_TIMESTAMP", new=time_bytes),
+        mock.patch("SolixBLE.SolixBLEDevice.negotiated", return_value=True),
         mock.patch("SolixBLE.SolixBLEDevice._listen_for_packet") as mock_listen,
         pytest.raises(returned) if isinstance(returned, type) else nullcontext(),
     ):
@@ -150,11 +161,19 @@ async def test_send_command_response(  # noqa: PLR0913, PLR0917
         result = await fn(*arguments)
         assert result == returned
 
+        # The send command function automatically adds a
+        # timestamp to the parameters which we need to account for
+        timestamp_bytes = (f"fe04{time_bytes}"
+            if issubclass(device_class, PrimeDevice)
+            else f"fe0503{time_bytes}"
+        )
+
         for call in expected:
-            mock_send.assert_called_once_with(
-                cmd=bytes.fromhex(call[0]),
-                payload=bytes.fromhex(call[1]),
-            )
+            mock_build.assert_called_once_with({
+                "pattern": bytes.fromhex("03000f"),
+                "cmd": bytes.fromhex(call[0]),
+                "payload_bytes": bytes.fromhex(call[1] + timestamp_bytes),
+            })
 
         for call in listen:
             mock_listen.assert_called_once_with(
