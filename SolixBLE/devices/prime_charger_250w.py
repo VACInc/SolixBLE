@@ -45,6 +45,12 @@ PARAMETERS_TIMER = {
     },
 }
 
+PARAMETERS_KEEP_ALIVE = {
+    "a1": {
+        "value": "21",
+    },
+}
+
 class PrimeCharger250w(PrimeDevice):
     """
     Anker Prime Charger (250W) model.
@@ -57,8 +63,8 @@ class PrimeCharger250w(PrimeDevice):
 
     async def _keep_alive(self) -> int | None:
         await self._send_command(
-            cmd=bytes.fromhex(CMD_SUB_AND_KEEP_ALIVE),
-            payload=bytes.fromhex(SUB_AND_KEEP_ALIVE_PAYLOAD),
+            cmd=CMD_SUB_AND_KEEP_ALIVE,
+            parameters=PARAMETERS_KEEP_ALIVE,
         )
         return KEEP_ALIVE_INTERNAL
 
