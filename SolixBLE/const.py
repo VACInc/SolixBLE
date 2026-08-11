@@ -44,6 +44,9 @@ DEFAULT_METADATA_FLOAT = -1.0
 #: Bool value for unknown boolean attributes.
 DEFAULT_METADATA_BOOL = None
 
+#: The pattern used in telemetry packers from some Anker devices
+TELEMETRY_PATTERN_A = "03010f"
+
 #: The pattern used in negotiation packets from Anker devices
 NEGOTIATION_PATTERN = "030001"
 

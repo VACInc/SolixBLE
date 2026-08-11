@@ -350,11 +350,14 @@ class PrimeDevice(SolixBLEDevice):
     # Packet processing #
     #####################
 
-    async def _send_command(self, cmd: bytes, payload: bytes) -> None:
+    async def _send_command(self, cmd: str, parameters: dict, **kwargs: dict) -> None:
         """Send a command to the device.
 
-        :param cmd: 2 bytes containing command type.
-        :param payload: Variable number of bytes containing arguments.
+        Parameter values may use lambda functions which will be executed at
+        this point, where variables may be passed in as keyword arguments.
+
+        :param cmd: The command type (e.g 4200, 0001, etc).
+        :param parameters: Parameters of the command.
         :raises ConnectionError: If not connected/negotiated to device.
         """
         if not self.negotiated:
@@ -364,10 +367,18 @@ class PrimeDevice(SolixBLEDevice):
         # and that timestamp is set during negotiations
         time_passed = int(time.time() - self._negotiation_timestamp)
         base_timestamp = int.from_bytes(
-            bytes.fromhex(BASE_TIMESTAMP), byteorder="little"
+            bytes.fromhex(BASE_TIMESTAMP), byteorder="little",
         )
         new_timestamp = (base_timestamp + time_passed).to_bytes(
-            length=4, byteorder="little"
+            length=4, byteorder="little",
         )
-        new_payload = payload + bytes.fromhex("fe04") + new_timestamp
-        await self._send_encrypted_packet(cmd, new_payload)
+        await self._send_packet(
+            pattern="03000f",
+            cmd=cmd,
+            parameters=parameters | { "fe": {
+                "key": bytes.fromhex("fe"),
+                "type": None,
+                "value": new_timestamp,
+            }},
+            **kwargs,
+        )

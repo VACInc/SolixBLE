@@ -5,7 +5,9 @@
 """
 
 import asyncio
+import inspect
 import logging
+from typing import Callable
 
 from bleak import BleakScanner, BLEDevice
 
@@ -46,12 +48,27 @@ async def discover_devices(
 
     return devices
 
-def _to_bytes(data: bytes | str | int | None, length: int = 1, signed: bool = False) -> bytes:
+def _filter_kwargs(function: Callable, args: dict) -> dict:
+    """
+    Return only the keyword arguments which are valid for the function.
+
+    :param function: Function to filter arguments for.
+    :param args: Arguments to filter.
+    :returns: Filtered arguments.
+    """
+    signature = inspect.signature(function)
+    return {
+        k: v for k, v in args.items()
+        if k in signature.parameters
+    }
+
+def _to_bytes(data: bytes | str | int | Callable | None, **kwargs: dict) -> bytes:
     """Return input in byte form.
 
+    Lambda functions are executed using keyword arguments.
+    Keyword arguments are passed through to conversion functions.
+
     :param data: Data to convert to bytes.
-    :param: length: Length if converting int.
-    :param signed: Sign if converting int.
     :returns: Byte form of input.
     :raises ValueError: If input type unsupported.
     """
@@ -62,5 +79,7 @@ def _to_bytes(data: bytes | str | int | None, length: int = 1, signed: bool = Fa
     if type(data) is str:
         return bytes.fromhex(data)
     if type(data) is int:
-        return int.to_bytes(data, length, "little", signed)
+        return int.to_bytes(data, **_filter_kwargs(int.to_bytes, kwargs))
+    if isinstance(data, Callable):
+        return _to_bytes(data(*[kwargs[x] for x in data.__code__.co_varnames]), **kwargs)
     raise ValueError(f"Unable to convert '{type(data)}' to bytes!")

@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import copy
 import inspect
 import json
 import logging
@@ -27,6 +28,7 @@ from cryptography.hazmat.primitives.asymmetric.ec import (
 from cryptography.hazmat.primitives.padding import PKCS7
 
 from SolixBLE.constructs import FragmentedPayload, Packet, ParameterDict, Parameters
+from SolixBLE.utilities import _to_bytes
 
 from .const import (
     BASE_TIMESTAMP,
@@ -611,10 +613,22 @@ class SolixBLEDevice:
 
             return None
 
-    async def _send_packet(self, pattern: str, cmd: str, parameters: dict) -> None:
-        """Build and send packet to device."""
+    async def _send_packet(self, pattern: str, cmd: str, parameters: dict, **kwargs: dict) -> None:
+        """
+        Build and send packet to device.
 
+        Parameter values may use lambda functions which will be executed at
+        this point, where variables may be passed in as keyword arguments.
+        """
         _LOGGER.debug(f"Building payload with parameters: {parameters}")
+
+        parameters = copy.deepcopy(parameters)
+        for key, item in parameters.items():
+            item["key"] = bytes.fromhex(key)
+            item["type"] = item.get("type", None)
+            item["value"] = _to_bytes(data=item["value"], **kwargs)
+        _LOGGER.debug(f"Generated payload parameters: {parameters}")
+
         payload = Parameters.build(parameters)
         _LOGGER.debug(f"Payload bytes: {payload.hex()}")
         encrypted_payload = self._encrypt_payload(payload)
@@ -809,20 +823,17 @@ class SolixBLEDevice:
                     f"Received unexpected negotiation request response from device! cmd: '{cmd}', parameters: '{self._parameters_to_str(parameters)}'"
                 )
 
-    def _checksum(self, packet: bytes) -> bytes:
-        """Calculate the checksum byte for a packet."""
-        checksum_value = 0
-        for b in packet:
-            checksum_value = checksum_value ^ b
-        return checksum_value.to_bytes(1)
-
-    async def _send_command(self, cmd: bytes, payload: bytes) -> None:
+    async def _send_command(self, cmd: str, parameters: dict, **kwargs: dict) -> None:
         """Send a command to the device.
 
+        Parameter values may use lambda functions which will be executed at
+        this point, where variables may be passed in as keyword arguments.
+
         :param cmd: 2 bytes containing command type.
-        :param payload: Variable number of bytes containing arguments.
+        :param parameters: Parameter dictionary to send.
         :raises ConnectionError: If not connected/negotiated to device.
         """
+
         if not self.negotiated:
             raise ConnectionError("Not connected to device")
 
@@ -830,46 +841,21 @@ class SolixBLEDevice:
         # and that timestamp is set during negotiations
         time_passed = int(time.time() - self._negotiation_timestamp)
         base_timestamp = int.from_bytes(
-            bytes.fromhex(BASE_TIMESTAMP), byteorder="little"
+            bytes.fromhex(BASE_TIMESTAMP), byteorder="little",
         )
         new_timestamp = (base_timestamp + time_passed).to_bytes(
-            length=4, byteorder="little"
+            length=4, byteorder="little",
         )
-        new_payload = payload + bytes.fromhex("fe0503") + new_timestamp
-        await self._send_encrypted_packet(cmd, new_payload)
-
-    def _build_packet(self, pattern: bytes, cmd: bytes, payload: bytes) -> bytes:
-        """
-        Build a packet to be send to a device.
-
-        Packet format: <HEADER 2B> <LENGTH 2B> <PATTERN 3B> <CMD 2B> <PAYLOAD bB> <CHECKSUM 1B>.
-
-        :param pattern: Pattern of packet (e.g encrypted, negotiation, etc).
-        :param cmd: Command in packet (e.g telemetry, power on, etc).
-        :param payload: Payload of command (e.g a1...).
-        :returns: Packet bytes ready to be sent.
-        """
-
-        # Calculate length of message
-        length = 2 + 2 + 3 + 2 + len(payload) + 1
-        length_bytes = length.to_bytes(length=2, byteorder="little")
-
-        # Build packet
-        packet = bytes.fromhex("ff09") + length_bytes + pattern + cmd + payload
-        return packet + self._checksum(packet)
-
-    async def _send_encrypted_packet(self, cmd: bytes, payload: bytes) -> None:
-        """Send an encrypted packet using negotiated shared secret and IV."""
-        _LOGGER.debug(
-            f"Building packet with cmd: {cmd.hex()} and payload: {payload.hex()}"
+        await self._send_packet(
+            pattern="03000f",
+            cmd=cmd,
+            parameters=parameters | { "fe": {
+                "key": bytes.fromhex("fe"),
+                "type": 3,
+                "value": new_timestamp,
+            }},
+            **kwargs,
         )
-        encrypted_payload = self._encrypt_payload(payload)
-
-        packet = self._build_packet(bytes.fromhex("03000f"), cmd, encrypted_payload)
-        _LOGGER.debug(f"Sending encrypted packet: {packet.hex()}")
-
-        # Send packet
-        await self._client.write_gatt_char(UUID_COMMAND, packet)
 
     def _register_future(
         self, future: asyncio.Future, pattern: bytes, cmd: bytes
