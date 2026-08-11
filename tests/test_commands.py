@@ -150,7 +150,7 @@ async def test_send_command_response(  # noqa: PLR0913, PLR0917
         mock.patch("SolixBLE.SolixBLEDevice._listen_for_packet") as mock_listen,
         pytest.raises(returned) if isinstance(returned, type) else nullcontext(),
     ):
-        mock_listen.side_effect = [bytes.fromhex(p[2] or b"") for p in listen]
+        mock_listen.side_effect = [bytes.fromhex(p[2] or "") for p in listen]
 
         fn = getattr(device, function)
         result = await fn(*arguments)
