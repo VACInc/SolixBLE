@@ -96,6 +96,14 @@ BASE_TIMESTAMP = "ef79b569"
 
 
 class PrimeDevice(SolixBLEDevice):
+    _COMMAND_WRITE_RESPONSE = False
+    _PRESERVE_OUT_OF_ORDER_FRAGMENTS = True
+    #: Negotiation command whose response completes the Prime handshake. The
+    #: shared secret is derived several stages earlier, so treating ECDH
+    #: completion as "negotiated" starts telemetry while the remaining
+    #: handshake writes are still in flight. Over a remote (ESPHome) GATT
+    #: transport those overlapping writes drop the peripheral connection.
+    _FINAL_NEGOTIATION_CMD = "4827"
     """
     This is a base class based upon SolixBLEDevice which contains logic
     unique to Anker Prime devices that is designed to be overridden for
@@ -164,6 +172,22 @@ class PrimeDevice(SolixBLEDevice):
     # Negotiation #
     ###############
 
+    _full_negotiation_complete = False
+
+    @property
+    def negotiated(self) -> bool:
+        """Return True only once the final negotiation stage has been sent."""
+        return (
+            self.connected
+            and self._shared_secret is not None
+            and self._full_negotiation_complete
+        )
+
+    def _reset_session(self, reset_data: bool = True) -> None:
+        """Clear the full-handshake marker alongside the rest of the session."""
+        super()._reset_session(reset_data)
+        self._full_negotiation_complete = False
+
     async def _initiate_negotiations(self) -> None:
         """
         Send the negotiation initiation command.
@@ -180,7 +204,7 @@ class PrimeDevice(SolixBLEDevice):
                 f"Stage 0 message parameters: {self._parameters_to_str(new_parameters, types=True)}"
             )
 
-        await self._client.write_gatt_char(
+        await self._write_gatt_char(
             UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_0)
         )
 
@@ -222,7 +246,7 @@ class PrimeDevice(SolixBLEDevice):
                     )
 
                 _LOGGER.debug("Sending stage 1 response message...")
-                return await self._client.write_gatt_char(
+                return await self._write_gatt_char(
                     UUID_COMMAND,
                     bytes.fromhex(NEGOTIATION_COMMAND_1),
                 )
@@ -251,7 +275,7 @@ class PrimeDevice(SolixBLEDevice):
                     )
 
                 _LOGGER.debug("Sending stage 2 response message...")
-                return await self._client.write_gatt_char(
+                return await self._write_gatt_char(
                     UUID_COMMAND,
                     bytes.fromhex(NEGOTIATION_COMMAND_2),
                 )
@@ -280,7 +304,7 @@ class PrimeDevice(SolixBLEDevice):
                     )
 
                 _LOGGER.debug("Sending stage 3 response message...")
-                return await self._client.write_gatt_char(
+                return await self._write_gatt_char(
                     UUID_COMMAND,
                     bytes.fromhex(NEGOTIATION_COMMAND_3),
                 )
@@ -309,7 +333,7 @@ class PrimeDevice(SolixBLEDevice):
                     )
 
                 _LOGGER.debug("Sending stage 4 response message...")
-                return await self._client.write_gatt_char(
+                return await self._write_gatt_char(
                     UUID_COMMAND,
                     bytes.fromhex(NEGOTIATION_COMMAND_4),
                 )
@@ -370,7 +394,7 @@ class PrimeDevice(SolixBLEDevice):
                     payload=new_payload,
                 )
                 _LOGGER.debug(f"Built stage 5 response packet: {new_packet.hex()}")
-                return await self._client.write_gatt_char(
+                return await self._write_gatt_char(
                     UUID_COMMAND,
                     new_packet,
                 )
@@ -409,7 +433,7 @@ class PrimeDevice(SolixBLEDevice):
                     payload=new_payload,
                 )
                 _LOGGER.debug(f"Built stage 6 response packet: {new_packet.hex()}")
-                return await self._client.write_gatt_char(
+                return await self._write_gatt_char(
                     UUID_COMMAND,
                     new_packet,
                 )
@@ -438,7 +462,7 @@ class PrimeDevice(SolixBLEDevice):
                     payload=new_payload_a,
                 )
                 _LOGGER.debug(f"Built stage 7a response packet: {new_packet_a.hex()}")
-                await self._client.write_gatt_char(
+                await self._write_gatt_char(
                     UUID_COMMAND,
                     new_packet_a,
                 )
@@ -462,7 +486,7 @@ class PrimeDevice(SolixBLEDevice):
                     payload=new_payload_b,
                 )
                 _LOGGER.debug(f"Built stage 7b response packet: {new_packet_b.hex()}")
-                await self._client.write_gatt_char(
+                await self._write_gatt_char(
                     UUID_COMMAND,
                     new_packet_b,
                 )
@@ -475,6 +499,9 @@ class PrimeDevice(SolixBLEDevice):
                     _LOGGER.debug(
                         f"Stage 7b response message parameters: {self._parameters_to_str(new_parameters, types=True)}"
                     )
+
+                # Both final packets are on the wire; telemetry may now start.
+                self._full_negotiation_complete = True
 
                 return
 

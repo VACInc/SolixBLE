@@ -56,6 +56,8 @@ class SolixBLEDevice:
     #: override this if their model uses different telemetry command codes
     #: (e.g the C1000 Gen 2 uses ``c421``/``c900`` instead of ``c402``/``c405``).
     _TELEMETRY_COMMANDS: tuple[str, ...] = ("c402", "4300", "c405")
+    _COMMAND_WRITE_RESPONSE: bool | None = None
+    _PRESERVE_OUT_OF_ORDER_FRAGMENTS = False
 
     def __init__(self, ble_device: BLEDevice) -> None:
         """Initialise device object. Does not connect automatically."""
@@ -99,9 +101,19 @@ class SolixBLEDevice:
         """
         self._state_changed_callbacks.remove(function)
 
+    async def _write_gatt_char(
+        self, characteristic, data: bytes, response: bool | None = None
+    ) -> None:
+        """Write a command using the transport semantics for this device family."""
+        if response is None:
+            response = self._COMMAND_WRITE_RESPONSE
+        await self._client.write_gatt_char(
+            characteristic, data, response=response
+        )
+
     async def _initiate_negotiations(self) -> None:
         """Send the negotiation initiation command."""
-        await self._client.write_gatt_char(
+        await self._write_gatt_char(
             UUID_COMMAND,
             bytes.fromhex(NEGOTIATION_COMMAND_0),
             response=True,
@@ -571,7 +583,17 @@ class SolixBLEDevice:
             )
 
             # Store fragment
-            if cmd_key not in self._fragment_buffers or fragment_index == 1:
+            if (
+                cmd_key not in self._fragment_buffers
+                or self._fragment_totals.get(cmd_key) != fragment_total
+                or (
+                    fragment_index == 1
+                    and (
+                        not self._PRESERVE_OUT_OF_ORDER_FRAGMENTS
+                        or fragment_index in self._fragment_buffers[cmd_key]
+                    )
+                )
+            ):
                 self._fragment_buffers[cmd_key] = {}
                 self._fragment_totals[cmd_key] = fragment_total
 
@@ -742,7 +764,7 @@ class SolixBLEDevice:
                 parameters = self._parse_payload(payload)
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
                 _LOGGER.debug("Sending stage 1 response message...")
-                return await self._client.write_gatt_char(
+                return await self._write_gatt_char(
                     UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_1)
                 )
 
@@ -754,7 +776,7 @@ class SolixBLEDevice:
                 parameters = self._parse_payload(payload)
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
                 _LOGGER.debug("Sending stage 2 response message...")
-                return await self._client.write_gatt_char(
+                return await self._write_gatt_char(
                     UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_2)
                 )
 
@@ -767,7 +789,7 @@ class SolixBLEDevice:
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
                 self._negotiation_timestamp = time.time()
                 _LOGGER.debug("Sending stage 3 response message...")
-                return await self._client.write_gatt_char(
+                return await self._write_gatt_char(
                     UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_3)
                 )
 
@@ -779,7 +801,7 @@ class SolixBLEDevice:
                 parameters = self._parse_payload(payload)
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
                 _LOGGER.debug("Sending stage 4 response message...")
-                return await self._client.write_gatt_char(
+                return await self._write_gatt_char(
                     UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_4)
                 )
 
@@ -809,7 +831,7 @@ class SolixBLEDevice:
                 _LOGGER.debug(f"Shared secret: {self._shared_secret.hex()}")
 
                 _LOGGER.debug("Sending stage 5 response message...")
-                return await self._client.write_gatt_char(
+                return await self._write_gatt_char(
                     UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_5)
                 )
 
@@ -890,7 +912,7 @@ class SolixBLEDevice:
         _LOGGER.debug(f"Sending encrypted packet: {packet.hex()}")
 
         # Send packet
-        await self._client.write_gatt_char(UUID_COMMAND, packet)
+        await self._write_gatt_char(UUID_COMMAND, packet)
 
     def _register_future(
         self, future: asyncio.Future, pattern: bytes, cmd: bytes
